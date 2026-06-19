@@ -80,6 +80,8 @@ NOT_YOUR_TURN：还没轮到你
 CARD_NOT_FOUND：玩家没有这张牌
 ILLEGAL_CARD：这张牌当前不能出
 COLOR_REQUIRED：需要选择颜色
+CHALLENGE_NOT_ALLOWED：当前不能质疑
+CHALLENGE_REQUIRED：需要选择质疑或摸牌
 ACTION_TIMEOUT：操作超时
 AD_REWARD_LIMIT：广告奖励次数已达上限
 SERVER_ERROR：服务器错误
@@ -187,6 +189,7 @@ POST /api/rooms
   "mixedDrawStack": false,
   "sameColorDump": false,
   "plusFourEnabled": true,
+  "plusFourChallenge": true,
   "specialPacks": [],
   "aiFill": true,
   "rounds": 1
@@ -402,11 +405,41 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 7.8 重连
+### 7.8 强制摸四响应
+
+当玩家被强制摸四影响且房间开启质疑时，客户端发送该消息。
+
+选择摸牌：
 
 ```json
 {
   "seq": 8,
+  "type": "respond_plus_four",
+  "data": {
+    "roomId": "839201",
+    "action": "draw"
+  }
+}
+```
+
+选择质疑：
+
+```json
+{
+  "seq": 9,
+  "type": "respond_plus_four",
+  "data": {
+    "roomId": "839201",
+    "action": "challenge"
+  }
+}
+```
+
+### 7.9 重连
+
+```json
+{
+  "seq": 10,
   "type": "reconnect",
   "data": {
     "roomId": "839201",
@@ -488,6 +521,7 @@ wss://game.example.com/ws?token=<token>
     "myHand": [],
     "deckCount": 42,
     "pendingDrawCount": 0,
+    "pendingChallenge": null,
     "turnDeadline": 1781870000000
   }
 }
@@ -539,7 +573,57 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.6 回合切换
+### 8.6 强制摸四待响应
+
+```json
+{
+  "type": "plus_four_response_required",
+  "data": {
+    "roomId": "839201",
+    "targetPlayerId": "u_2",
+    "challengedPlayerId": "u_1",
+    "chooseColor": "blue",
+    "options": ["draw", "challenge"],
+    "turnDeadline": 1781870030000
+  }
+}
+```
+
+### 8.7 强制摸四质疑结果
+
+质疑成功：
+
+```json
+{
+  "type": "plus_four_challenge_result",
+  "data": {
+    "success": true,
+    "challengerId": "u_2",
+    "challengedPlayerId": "u_1",
+    "drawPlayerId": "u_1",
+    "drawCount": 4,
+    "state": {}
+  }
+}
+```
+
+质疑失败：
+
+```json
+{
+  "type": "plus_four_challenge_result",
+  "data": {
+    "success": false,
+    "challengerId": "u_2",
+    "challengedPlayerId": "u_1",
+    "drawPlayerId": "u_2",
+    "drawCount": 6,
+    "state": {}
+  }
+}
+```
+
+### 8.8 回合切换
 
 ```json
 {
@@ -552,7 +636,7 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.7 游戏结束
+### 8.9 游戏结束
 
 ```json
 {

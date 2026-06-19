@@ -52,6 +52,7 @@ type RuleConfig = {
   mixedDrawStack: boolean;
   sameColorDump: boolean;
   plusFourEnabled: boolean;
+  plusFourChallenge: boolean;
   specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
   aiFill: boolean;
   rounds: 1 | 3 | 5;
@@ -75,6 +76,12 @@ type GameState = {
   currentColor: CardColor;
   pendingDrawCount: number;
   pendingDrawSource?: 'plus_two' | 'wild_plus_four';
+  pendingChallenge?: {
+    challengerId: string;
+    challengedPlayerId: string;
+    cardId: string;
+    previousColor: CardColor;
+  };
   turnDeadline: number;
   seedHash: string;
 };
@@ -106,6 +113,7 @@ class GameEngine {
 - 同色全出是否合法。
 - 加牌叠加是否合法。
 - 是否需要选择颜色。
+- 是否存在待处理 +4 质疑。
 
 ### 3.3 EffectResolver
 
@@ -215,13 +223,22 @@ class GameEngine {
 默认规则：
 
 - 必须传 `chooseColor`。
-- 下家摸 4 张。
-- 下家跳过。
+- 如果 `plusFourChallenge = true`，下家可以选择质疑或摸 4 张。
+- 如果 `plusFourChallenge = false`，下家摸 4 张并跳过。
+
+质疑规则：
+
+- 服务端记录打出 +4 前的 `previousColor`。
+- 质疑者选择质疑时，服务端检查出牌者当时手牌中是否有 `previousColor` 的可出牌。
+- 如果出牌者当时有 `previousColor` 可出牌，则质疑成功，出牌者摸 4 张，+4 效果取消。
+- 如果出牌者当时没有 `previousColor` 可出牌，则质疑失败，质疑者摸 6 张并跳过回合。
+- 质疑结果由服务端下发，客户端只播放对应动画。
 
 叠加规则：
 
 - 设置或增加 `pendingDrawCount`。
 - 设置 `pendingDrawSource = 'wild_plus_four'`。
+- 如果同时开启 +4 叠加和 +4 质疑，优先让目标玩家选择“叠加 / 质疑 / 摸牌”；选择叠加后继续累计，选择质疑后结算质疑。
 
 ## 7. 扩展规则
 
@@ -350,6 +367,8 @@ AI 策略需要支持：
 - +2 默认让下家摸 2 并跳过。
 - +2 叠加开启后可累计。
 - +4 需要选择颜色。
+- +4 质疑成功时，出牌者摸 4 张。
+- +4 质疑失败时，质疑者摸 6 张。
 - 变色牌更新当前颜色。
 - 同色全出开启时允许多张同色。
 - 同色全出关闭时拒绝多张出牌。

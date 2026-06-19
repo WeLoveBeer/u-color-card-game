@@ -477,6 +477,7 @@ type RuleConfig = {
   mixedDrawStack: boolean;
   sameColorDump: boolean;
   plusFourEnabled: boolean;
+  plusFourChallenge: boolean;
   specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
   aiFill: boolean;
   rounds: 1 | 3 | 5;
@@ -496,6 +497,7 @@ const DEFAULT_RULE_CONFIG: RuleConfig = {
   mixedDrawStack: false,
   sameColorDump: false,
   plusFourEnabled: true,
+  plusFourChallenge: true,
   specialPacks: [],
   aiFill: true,
   rounds: 1
@@ -562,6 +564,7 @@ type CardEffectHandler = {
 - 玩家是否拥有该牌。
 - 该牌是否符合当前颜色、数字或功能。
 - 是否需要选择颜色。
+- 是否需要处理 +4 质疑。
 - 摸牌次数是否正确。
 - 功能牌效果是否正确。
 - 玩家是否已出完牌。
