@@ -51,6 +51,7 @@ type RuleConfig = {
   plusFourStack: boolean;
   mixedDrawStack: boolean;
   sameColorDump: boolean;
+  callUPenalty: boolean;
   plusFourEnabled: boolean;
   plusFourChallenge: boolean;
   specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
@@ -82,6 +83,12 @@ type GameState = {
     cardId: string;
     previousColor: CardColor;
   };
+  calledUThisTurn: Record<string, boolean>;
+  missedCallWindow?: {
+    targetPlayerId: string;
+    openedAtActionSeq: number;
+    closesAfterPlayerId: string;
+  };
   turnDeadline: number;
   seedHash: string;
 };
@@ -99,6 +106,8 @@ class GameEngine {
   playCards(state: GameState, playerId: string, cardIds: string[], chooseColor?: CardColor): GameResult {}
   drawCard(state: GameState, playerId: string): GameResult {}
   passTurn(state: GameState, playerId: string): GameResult {}
+  callU(state: GameState, playerId: string): GameResult {}
+  catchMissedCall(state: GameState, catcherId: string, targetPlayerId: string): GameResult {}
   handleTimeout(state: GameState, playerId: string): GameResult {}
 }
 ```
@@ -114,6 +123,8 @@ class GameEngine {
 - 加牌叠加是否合法。
 - 是否需要选择颜色。
 - 是否存在待处理 +4 质疑。
+- 玩家打倒数第二张牌前是否已经喊 U。
+- 抓忘喊是否仍在有效窗口内。
 
 ### 3.3 EffectResolver
 
@@ -125,6 +136,7 @@ class GameEngine {
 - 变色。
 - +4。
 - 特殊牌。
+- 忘喊 U 罚牌。
 
 ### 3.4 TurnResolver
 
@@ -258,7 +270,47 @@ sameColorDump: true
 - 最后一张功能牌才触发主效果。
 - 如果包含多张功能牌，首版建议拒绝，避免结算混乱。
 
-### 7.2 加二加四叠加
+### 7.2 忘喊 U 罚牌
+
+配置：
+
+```ts
+callUPenalty: true
+```
+
+喊 U 规则：
+
+- 当玩家当前手牌数为 2，且准备打出其中 1 张牌时，需要在出牌前先调用 `callU`。
+- `callU` 只在当前玩家回合、当前玩家手牌数为 2 时合法。
+- `callU` 成功后，服务端记录 `calledUThisTurn[playerId] = true`。
+- 如果玩家已经喊 U，再打出倒数第二张牌，不产生可抓窗口。
+
+忘喊判定：
+
+- 服务端处理 `playCards` 时，如果满足以下条件，则打开可抓窗口：
+  - `callUPenalty = true`。
+  - 出牌前该玩家手牌数为 2。
+  - 本次出牌后该玩家手牌数为 1。
+  - `calledUThisTurn[playerId] !== true`。
+- 可抓窗口记录在 `missedCallWindow` 中。
+- 可抓窗口从该出牌动作完成后开始，到下一位玩家完成有效操作后关闭。
+
+抓忘喊：
+
+- 其他玩家发送 `catchMissedCall(targetPlayerId)`。
+- 服务端校验 `missedCallWindow.targetPlayerId` 是否等于目标玩家。
+- 抓人者不能是目标玩家本人。
+- 如果可抓窗口仍有效，目标玩家摸 2 张牌。
+- 服务端下发抓人成功事件，客户端播放头像爆炸和罚牌动画。
+- 如果窗口已关闭或目标不匹配，返回 `CATCH_NOT_ALLOWED`。
+
+清理规则：
+
+- 玩家完成回合后清理自己的 `calledUThisTurn`。
+- 可抓窗口关闭时清理 `missedCallWindow`。
+- 如果目标玩家因被抓摸牌，不回滚其刚才打出的牌。
+
+### 7.3 加二加四叠加
 
 配置：
 
@@ -275,7 +327,7 @@ mixedDrawStack: false
 - `mixedDrawStack = false` 时，+2 只能叠 +2，+4 只能叠 +4。
 - `mixedDrawStack = true` 时，+2 与 +4 可以互相叠加。
 
-### 7.3 气球牌
+### 7.4 气球牌
 
 配置：
 
@@ -294,7 +346,7 @@ specialPacks: ['balloon']
 - 随机结果由服务端生成。
 - 客户端只播放服务端下发的结果。
 
-### 7.4 交换手牌牌
+### 7.5 交换手牌牌
 
 配置：
 
@@ -308,7 +360,7 @@ specialPacks: ['swap_hand']
 - 双方交换全部手牌。
 - 如果目标玩家只剩 1 张牌，需要特别提示。
 
-### 7.5 颜色封锁牌
+### 7.6 颜色封锁牌
 
 配置：
 
@@ -343,7 +395,9 @@ AI 输出：
 type AiAction =
   | { type: 'play_card'; cardIds: string[]; chooseColor?: CardColor }
   | { type: 'draw_card' }
-  | { type: 'pass_turn' };
+  | { type: 'pass_turn' }
+  | { type: 'call_u' }
+  | { type: 'catch_missed_call'; targetPlayerId: string };
 ```
 
 AI 策略需要支持：
@@ -351,6 +405,8 @@ AI 策略需要支持：
 - 标准出牌。
 - 被加牌时是否叠加。
 - 同色全出时是否一次打多张。
+- 打出倒数第二张牌前是否需要喊 U。
+- 是否需要抓其他玩家忘喊 U。
 - 变色时选择手牌最多的颜色。
 - 对下家剩 1 张牌时优先压制。
 

@@ -82,6 +82,7 @@ ILLEGAL_CARD：这张牌当前不能出
 COLOR_REQUIRED：需要选择颜色
 CHALLENGE_NOT_ALLOWED：当前不能质疑
 CHALLENGE_REQUIRED：需要选择质疑或摸牌
+CATCH_NOT_ALLOWED：当前不能抓忘喊
 ACTION_TIMEOUT：操作超时
 AD_REWARD_LIMIT：广告奖励次数已达上限
 SERVER_ERROR：服务器错误
@@ -203,6 +204,7 @@ GET /api/config
       "ruleSet": "standard",
       "plusTwoStack": false,
       "plusFourEnabled": true,
+      "callUPenalty": false,
       "aiFill": true,
       "rounds": 1
     }
@@ -228,6 +230,7 @@ POST /api/rooms
   "plusFourStack": false,
   "mixedDrawStack": false,
   "sameColorDump": false,
+  "callUPenalty": false,
   "plusFourEnabled": true,
   "plusFourChallenge": true,
   "specialPacks": [],
@@ -475,11 +478,52 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 7.9 重连
+### 7.9 喊 U
+
+当房间开启“忘喊 U 罚牌”，且玩家手牌数为 2、准备打出倒数第二张牌前，客户端发送该消息。
 
 ```json
 {
   "seq": 10,
+  "type": "call_u",
+  "data": {
+    "roomId": "839201"
+  }
+}
+```
+
+说明：
+
+- 该消息必须在出牌前发送。
+- 服务端只在当前玩家回合且该玩家手牌数为 2 时接受。
+- 成功后服务端广播玩家已喊 U 的轻量事件，客户端播放“U！”气泡。
+
+### 7.10 抓忘喊
+
+当某玩家未先喊 U 就打出倒数第二张牌，其他玩家点击该玩家头像后发送该消息。
+
+```json
+{
+  "seq": 11,
+  "type": "catch_missed_call",
+  "data": {
+    "roomId": "839201",
+    "targetPlayerId": "u_10002"
+  }
+}
+```
+
+说明：
+
+- 抓人者不能是目标玩家本人。
+- 只有在服务端下发的可抓窗口内才有效。
+- 抓人成功后，目标玩家摸 2 张牌。
+
+### 7.11 重连
+
+```json
+{
+  "seq": 12,
   "type": "reconnect",
   "data": {
     "roomId": "839201",
@@ -697,6 +741,69 @@ wss://game.example.com/ws?token=<token>
   }
 }
 ```
+
+### 8.10 喊 U 事件
+
+```json
+{
+  "type": "player_called_u",
+  "data": {
+    "playerId": "u_10001"
+  }
+}
+```
+
+客户端表现：
+
+- 在该玩家头像旁显示短暂气泡：“U！”。
+
+### 8.11 忘喊 U 可抓
+
+```json
+{
+  "type": "missed_call_window_opened",
+  "data": {
+    "targetPlayerId": "u_10001",
+    "expiresAfterPlayerAction": "u_10002"
+  }
+}
+```
+
+客户端表现：
+
+- 目标玩家头像外圈橙红色闪烁。
+- 其他玩家可点击该头像抓忘喊。
+
+### 8.12 抓忘喊结果
+
+抓人成功：
+
+```json
+{
+  "type": "missed_call_caught",
+  "data": {
+    "catcherId": "u_10003",
+    "targetPlayerId": "u_10001",
+    "penaltyCards": 2
+  }
+}
+```
+
+抓人窗口关闭：
+
+```json
+{
+  "type": "missed_call_window_closed",
+  "data": {
+    "targetPlayerId": "u_10001"
+  }
+}
+```
+
+客户端表现：
+
+- 抓人成功时，目标玩家头像播放爆炸效果并摸 2 张。
+- 窗口关闭时，头像闪烁停止。
 
 ## 9. 重连策略
 

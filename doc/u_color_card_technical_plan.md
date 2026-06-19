@@ -483,6 +483,7 @@ type RuleConfig = {
   plusFourStack: boolean;
   mixedDrawStack: boolean;
   sameColorDump: boolean;
+  callUPenalty: boolean;
   plusFourEnabled: boolean;
   plusFourChallenge: boolean;
   specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
@@ -503,6 +504,7 @@ const DEFAULT_RULE_CONFIG: RuleConfig = {
   plusFourStack: false,
   mixedDrawStack: false,
   sameColorDump: false,
+  callUPenalty: false,
   plusFourEnabled: true,
   plusFourChallenge: true,
   specialPacks: [],
@@ -551,6 +553,14 @@ type CardEffectHandler = {
 - 服务端维护 `pendingDrawCount` 和 `pendingDrawSource`。
 - 玩家如果能继续叠加，则允许出对应加牌。
 - 玩家不能叠加时，必须摸累计张数并跳过回合。
+
+忘喊 U 罚牌：
+
+- 配置项：`callUPenalty`。
+- 玩家手牌为 2 张时，打出倒数第二张牌前必须先喊 U。
+- 如果未喊 U 就出牌，服务端打开可抓窗口。
+- 其他玩家点击目标头像抓忘喊，成功后目标玩家摸 2 张。
+- 服务端必须校验可抓窗口，客户端只负责播放头像爆炸和罚牌动画。
 
 气球牌：
 
