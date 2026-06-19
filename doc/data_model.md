@@ -185,7 +185,7 @@ CREATE TABLE app_configs (
     "plusTwoStack": false,
     "plusFourStack": false,
     "sameColorDump": false,
-    "callUPenalty": false,
+    "callUPenalty": true,
     "specialPacks": []
   }
 }

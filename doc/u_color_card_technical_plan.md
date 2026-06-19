@@ -286,6 +286,18 @@ RewardService：
 - 广告奖励记录。
 - 每日次数限制。
 - 发放金币或外观体验。
+- 对局金币结算。
+- 排行榜金币余额更新。
+
+金币结算默认值：
+
+- 人机局胜利：+50 金币。
+- 人机局失败：+15 金币。
+- 好友房第一名：+30 金币。
+- 好友房其他玩家：+10 金币。
+- 广告翻倍只翻倍本局基础金币奖励。
+- 排行榜按用户当前金币余额排名。
+- 首版建议每日对局金币获取上限为 1000 金币，防止刷榜。
 
 ConfigService：
 
@@ -504,7 +516,7 @@ const DEFAULT_RULE_CONFIG: RuleConfig = {
   plusFourStack: false,
   mixedDrawStack: false,
   sameColorDump: false,
-  callUPenalty: false,
+  callUPenalty: true,
   plusFourEnabled: true,
   plusFourChallenge: true,
   specialPacks: [],
@@ -557,6 +569,7 @@ type CardEffectHandler = {
 忘喊 U 罚牌：
 
 - 配置项：`callUPenalty`。
+- 首版默认开启，人机模式和好友房默认都开启。
 - 玩家手牌为 2 张时，打出倒数第二张牌前必须先喊 U。
 - 如果未喊 U 就出牌，服务端打开可抓窗口。
 - 其他玩家点击目标头像抓忘喊，成功后目标玩家摸 2 张。

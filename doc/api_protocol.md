@@ -204,7 +204,7 @@ GET /api/config
       "ruleSet": "standard",
       "plusTwoStack": false,
       "plusFourEnabled": true,
-      "callUPenalty": false,
+      "callUPenalty": true,
       "aiFill": true,
       "rounds": 1
     }
@@ -230,7 +230,7 @@ POST /api/rooms
   "plusFourStack": false,
   "mixedDrawStack": false,
   "sameColorDump": false,
-  "callUPenalty": false,
+  "callUPenalty": true,
   "plusFourEnabled": true,
   "plusFourChallenge": true,
   "specialPacks": [],
@@ -435,6 +435,13 @@ wss://game.example.com/ws?token=<token>
   }
 }
 ```
+
+说明：
+
+- 玩家在自己回合内可以主动摸 1 张，即使当前有合法可出牌。
+- 如果摸到可出的牌，客户端展示“打出这张 / 留在手里”选择。
+- 选择“留在手里”后，客户端发送 `pass_turn` 或由服务端按摸牌响应直接结束回合。
+- 如果存在 +2 / +4 等待摸牌惩罚，`draw_card` 按惩罚规则结算，不按普通主动摸牌处理。
 
 ### 7.7 结束回合
 
