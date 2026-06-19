@@ -291,13 +291,14 @@ RewardService：
 
 金币结算默认值：
 
-- 人机局胜利：+50 金币。
-- 人机局失败：+15 金币。
-- 好友房第一名：+30 金币。
-- 好友房其他玩家：+10 金币。
-- 广告翻倍只翻倍本局基础金币奖励。
+- 2 人局：第 1 名 +50 金币，第 2 名 -50 金币。
+- 3 人局：第 1 名 +60 金币，第 2 名 +10 金币，第 3 名 -70 金币。
+- 4 人局：第 1 名 +80 金币，第 2 名 +20 金币，第 3 名 -30 金币，第 4 名 -70 金币。
+- 人机局中 AI 不拥有金币，玩家输赢由系统发放或扣除。
+- 金币不足时最低扣到 0。
+- 广告翻倍只翻倍正向金币奖励，不放大失败扣除。
 - 排行榜按用户当前金币余额排名。
-- 首版建议每日对局金币获取上限为 1000 金币，防止刷榜。
+- 首版建议每日对局正向金币获取上限为 1000 金币，防止刷榜。
 
 ConfigService：
 
@@ -490,7 +491,7 @@ type RuleConfig = {
   playerCount: 2 | 3 | 4;
   initialCards: 5 | 7 | 9;
   turnSeconds: 15 | 30 | 60;
-  ruleSet: 'simple' | 'standard' | 'party';
+  ruleSet: 'standard' | 'party';
   plusTwoStack: boolean;
   plusFourStack: boolean;
   mixedDrawStack: boolean;
@@ -524,6 +525,39 @@ const DEFAULT_RULE_CONFIG: RuleConfig = {
   rounds: 1
 };
 ```
+
+规则包映射：
+
+```ts
+const STANDARD_RULE_CONFIG = {
+  plusTwoStack: false,
+  plusFourStack: false,
+  mixedDrawStack: false,
+  sameColorDump: false,
+  plusFourEnabled: true,
+  plusFourChallenge: true,
+  callUPenalty: true,
+  specialPacks: []
+};
+
+const PARTY_RULE_CONFIG = {
+  plusTwoStack: true,
+  plusFourStack: false,
+  mixedDrawStack: false,
+  sameColorDump: true,
+  plusFourEnabled: true,
+  plusFourChallenge: true,
+  callUPenalty: true,
+  specialPacks: []
+};
+```
+
+说明：
+
+- 首版只保留 `standard` 和 `party`，不提供 `simple`。
+- 标准模式包含强制摸四质疑和忘喊 U 罚牌。
+- 欢乐模式默认打开同色全出和加二叠加。
+- 加四叠加和混合叠加惩罚过强，首版作为高级扩展预留，不随欢乐模式默认开启。
 
 ### 5.2 规则引擎拆分
 

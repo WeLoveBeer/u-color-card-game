@@ -46,7 +46,7 @@ type RuleConfig = {
   playerCount: 2 | 3 | 4;
   initialCards: 5 | 7 | 9;
   turnSeconds: 15 | 30 | 60;
-  ruleSet: 'simple' | 'standard' | 'party';
+  ruleSet: 'standard' | 'party';
   plusTwoStack: boolean;
   plusFourStack: boolean;
   mixedDrawStack: boolean;
@@ -200,7 +200,9 @@ class GameEngine {
 主动摸牌：
 
 - 玩家在自己回合内可以主动摸 1 张，即使当前有合法可出牌。
-- 摸到可出牌后，玩家可以立即打出，也可以选择留在手里并结束回合。
+- 摸到可出牌后，玩家只能选择立即打出刚摸到的那一张，或选择留在手里并结束回合。
+- 摸牌后不能改打手里原本已有的其他牌。
+- 如果刚摸到的是 `wild_color` 或 `wild_plus_four`，也允许立即打出，但必须选择颜色。
 - 摸到不可出牌时，自动加入手牌并结束回合。
 - 如果存在待摸牌惩罚状态，则不能按普通主动摸牌处理，必须按惩罚摸牌规则结算。
 

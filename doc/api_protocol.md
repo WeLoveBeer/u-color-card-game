@@ -440,6 +440,8 @@ wss://game.example.com/ws?token=<token>
 
 - 玩家在自己回合内可以主动摸 1 张，即使当前有合法可出牌。
 - 如果摸到可出的牌，客户端展示“打出这张 / 留在手里”选择。
+- “打出这张”只能打刚摸到的那张牌，不能改打手里原本已有的其他牌。
+- 如果刚摸到的是变色牌或强制摸四牌，也允许立即打出，但必须选择颜色。
 - 选择“留在手里”后，客户端发送 `pass_turn` 或由服务端按摸牌响应直接结束回合。
 - 如果存在 +2 / +4 等待摸牌惩罚，`draw_card` 按惩罚规则结算，不按普通主动摸牌处理。
 
@@ -744,7 +746,14 @@ wss://game.example.com/ws?token=<token>
       }
     ],
     "seedHash": "sha256_seed_hash",
-    "rewards": []
+    "rewards": [],
+    "coinDeltas": [
+      {
+        "playerId": "u_1",
+        "coinDelta": 50,
+        "coinAfter": 1250
+      }
+    ]
   }
 }
 ```
