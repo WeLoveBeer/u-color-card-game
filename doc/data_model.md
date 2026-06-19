@@ -34,12 +34,15 @@ CREATE TABLE users (
 
 ```sql
 CREATE UNIQUE INDEX idx_users_openid_hash ON users(openid_hash);
+CREATE INDEX idx_users_coin_rank ON users(coin DESC, created_at ASC);
 ```
 
 说明：
 
 - 不建议明文保存 openid，使用 hash 或加密存储。
 - 昵称头像可由客户端授权后更新。
+- 金币排行榜按 `coin DESC, created_at ASC` 排序，同金币时更早创建账号排前。
+- 排行榜只展示 `id`、`nickname`、`avatar`、`coin` 和计算出的名次。
 
 ### 2.2 rooms
 
@@ -436,7 +439,7 @@ lock:room:{roomId}
 如果服务器配置较低，首版可以简化：
 
 - `game_actions` 异步批量写入。
-- 暂不做复杂排行榜。
+- 排行榜首版只做金币总榜，不做周榜、好友榜、分段榜。
 - 暂不做完整回放，只保留 seed hash 和关键操作。
 - 统计表每日定时聚合，首版也可只写基础字段。
 

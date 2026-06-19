@@ -251,6 +251,13 @@ UserService：
 - 牌背。
 - 基础统计。
 
+LeaderboardService：
+
+- 查询金币排行榜。
+- 查询当前用户自己的金币排名。
+- 只返回昵称、头像、金币、名次等公开展示字段。
+- 首版按 `users.coin` 排序，不做复杂赛季榜。
+
 RoomService：
 
 - 创建房间。

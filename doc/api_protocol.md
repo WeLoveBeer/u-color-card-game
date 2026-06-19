@@ -142,7 +142,47 @@ GET /api/users/me
 }
 ```
 
-### 5.3 获取远程配置
+### 5.3 获取金币排行榜
+
+```text
+GET /api/leaderboards/coins?limit=100
+```
+
+说明：
+
+- 按已登录用户当前金币数量从高到低排名。
+- 相同金币时，账号创建时间更早的用户排前。
+- 首版只返回前 100 名和当前用户自己的排名。
+- AI 用户不进入排行榜。
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "rank": 1,
+        "userId": "u_10001",
+        "nickname": "玩家",
+        "avatar": "",
+        "coin": 12000
+      }
+    ],
+    "me": {
+      "rank": 128,
+      "userId": "u_10088",
+      "nickname": "我的昵称",
+      "avatar": "",
+      "coin": 860
+    },
+    "updatedAt": "2026-06-19T12:00:00Z"
+  }
+}
+```
+
+### 5.4 获取远程配置
 
 ```text
 GET /api/config
@@ -170,7 +210,7 @@ GET /api/config
 }
 ```
 
-### 5.4 创建房间
+### 5.5 创建房间
 
 ```text
 POST /api/rooms
@@ -208,7 +248,7 @@ POST /api/rooms
 }
 ```
 
-### 5.5 查询房间
+### 5.6 查询房间
 
 ```text
 GET /api/rooms/{roomId}
@@ -237,7 +277,7 @@ GET /api/rooms/{roomId}
 }
 ```
 
-### 5.6 广告奖励
+### 5.7 广告奖励
 
 ```text
 POST /api/rewards/ad
