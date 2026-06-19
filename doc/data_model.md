@@ -212,7 +212,10 @@ TTL：等待中 2 小时，对局中 4 小时
       "seatIndex": 0,
       "ready": true,
       "online": true,
-      "isAi": false
+      "isAi": false,
+      "isAutoPlaying": false,
+      "disconnectAt": null,
+      "autoPlayAt": null
     }
   ],
   "createdAt": 1781870000000
@@ -237,6 +240,14 @@ TTL：4 小时
   "status": "playing",
   "ruleConfig": {},
   "players": ["u_1", "u_2", "ai_1", "ai_2"],
+  "playerRuntime": {
+    "u_1": {
+      "online": true,
+      "isAutoPlaying": false,
+      "disconnectAt": null,
+      "autoPlayAt": null
+    }
+  },
   "deck": [],
   "discardPile": [],
   "hands": {},
@@ -256,13 +267,14 @@ room:player:{userId}
 ```
 
 类型：String  
-TTL：4 小时  
+TTL：等待房间 2 小时，对局中 4 小时  
 值：`roomId`
 
 用途：
 
 - 防止用户重复进入多个房间。
 - 断线后快速找到房间。
+- 客户端重启后自动回到未结束房间。
 
 ### 3.4 Socket 映射
 
@@ -274,7 +286,32 @@ socket:user:{userId}
 TTL：连接期间刷新，断线后 2 分钟  
 值：`socketId`
 
-### 3.5 房间锁
+### 3.5 断线托管标记
+
+```text
+autoplay:room:{roomId}:player:{userId}
+```
+
+类型：String JSON  
+TTL：对局结束或 4 小时  
+
+内容：
+
+```json
+{
+  "disconnectAt": 1781870000000,
+  "autoPlayAt": 1781870015000,
+  "isAutoPlaying": true
+}
+```
+
+用途：
+
+- 标记玩家是否已进入托管。
+- 服务端定时器或回合流转时判断是否由 AI 行动。
+- 玩家重连后删除该 key 或将 `isAutoPlaying` 置为 false。
+
+### 3.6 房间锁
 
 ```text
 lock:room:{roomId}
@@ -320,7 +357,8 @@ Redis：
 - 等待房间超过 2 小时未开始，自动过期。
 - 对局房间超过 4 小时未结束，标记异常并清理。
 - 用户 socket 映射断线后保留 2 分钟。
-- 用户所在房间映射在房间结束后删除。
+- 用户所在房间映射等待房间保留 2 小时，对局中保留到对局结束。
+- 断线托管标记保留到玩家重连或对局结束。
 
 PostgreSQL：
 
@@ -350,7 +388,7 @@ PostgreSQL：
 
 - 写 PostgreSQL `game_records`。
 - 更新 PostgreSQL `rooms.status = ended`。
-- 删除 Redis `room:{roomId}`、`game:{roomId}`、`room:player:{userId}`。
+- 删除 Redis `room:{roomId}`、`game:{roomId}`、`room:player:{userId}`、`autoplay:room:{roomId}:player:{userId}`。
 
 广告奖励：
 

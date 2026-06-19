@@ -470,7 +470,10 @@ wss://game.example.com/ws?token=<token>
         "seatIndex": 0,
         "handCount": 5,
         "online": true,
-        "isAi": false
+        "isAi": false,
+        "isAutoPlaying": false,
+        "disconnectAt": null,
+        "autoPlayAt": null
       }
     ],
     "currentPlayerId": "u_1",
@@ -573,12 +576,106 @@ wss://game.example.com/ws?token=<token>
 
 ## 9. 重连策略
 
-- 客户端断线后立即尝试重连。
-- 1 秒、2 秒、4 秒、8 秒退避重试，最多重试 30 秒。
+### 9.1 客户端自动重连
+
+- 客户端检测到 WebSocket 断开后立即进入重连状态。
+- 重连退避间隔：1 秒、2 秒、4 秒、8 秒，之后每 8 秒重试一次。
+- 前台状态下最多持续重试 60 秒。
+- 后台状态下暂停高频重试，回到前台后立即重连。
 - 重连成功后发送 `reconnect`。
 - 服务端返回当前完整 `room_state` 和 `game_state`。
-- 玩家断线期间如果轮到该玩家，由服务端托管。
-- 好友房对局结束前，断线玩家座位不立即释放。
+
+### 9.2 服务端断线状态
+
+- 服务端检测 socket 关闭后，记录 `disconnectAt`。
+- 玩家 `online = false`。
+- 广播 `player_offline`，通知其他玩家该玩家掉线。
+- 断线超过 15 秒且对局仍未结束，设置 `isAutoPlaying = true`。
+- 如果此时轮到该玩家，服务端立即执行一次托管行动。
+- 如果还没轮到该玩家，则轮到该玩家时由托管 AI 行动。
+
+座位保留：
+
+- 好友房对局结束前，断线玩家座位不释放。
+- 等待房间中断线超过 120 秒，房主可移除该玩家。
+- 对局中断线超过 10 分钟仍保留座位，但持续托管到本局结束。
+
+### 9.3 重连回房
+
+重连请求：
+
+```json
+{
+  "seq": 8,
+  "type": "reconnect",
+  "data": {
+    "roomId": "839201",
+    "lastSeq": 120
+  }
+}
+```
+
+服务端处理：
+
+- 校验 token 对应用户是否属于该房间。
+- 如果房间仍存在，恢复 socket 映射。
+- 设置 `online = true`。
+- 清空 `disconnectAt`。
+- 如果玩家此前被托管，设置 `isAutoPlaying = false`。
+- 下发完整 `room_state` 和当前玩家视角的 `game_state`。
+- 广播 `player_reconnected`。
+
+如果玩家没有传 `roomId`：
+
+- 服务端通过 `room:player:{userId}` 查找未结束房间。
+- 找到则返回该房间状态。
+- 找不到则返回 `ROOM_NOT_FOUND`。
+
+### 9.4 托管期间玩家回归
+
+- 如果托管 AI 正在等待行动，玩家重连后立即恢复手动操作。
+- 如果托管 AI 已经完成本回合行动，该行动有效，不回滚。
+- 玩家重连后从最新状态继续游戏。
+- 客户端需要提示“已恢复对局，托管已关闭”。
+
+### 9.5 相关服务端消息
+
+玩家离线：
+
+```json
+{
+  "type": "player_offline",
+  "data": {
+    "roomId": "839201",
+    "playerId": "u_2",
+    "autoPlayAt": 1781870015000
+  }
+}
+```
+
+玩家进入托管：
+
+```json
+{
+  "type": "player_auto_play_started",
+  "data": {
+    "roomId": "839201",
+    "playerId": "u_2"
+  }
+}
+```
+
+玩家重连：
+
+```json
+{
+  "type": "player_reconnected",
+  "data": {
+    "roomId": "839201",
+    "playerId": "u_2"
+  }
+}
+```
 
 ## 10. 安全要求
 

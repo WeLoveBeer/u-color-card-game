@@ -112,6 +112,7 @@ WsClient：
 - 发送出牌、摸牌、准备、开始等消息。
 - 接收房间和对局状态。
 - 自动重连。
+- 重连后自动请求恢复未结束房间。
 
 GameController：
 
@@ -258,6 +259,8 @@ RoomService：
 - 准备状态。
 - 房间规则。
 - AI 补位。
+- 断线座位保留。
+- 重连回房。
 
 GameEngine：
 
@@ -267,6 +270,7 @@ GameEngine：
 - 校验出牌。
 - 处理摸牌。
 - 处理功能牌。
+- 处理断线托管行动。
 - 判断胜负。
 - 生成结算。
 
@@ -396,6 +400,9 @@ card_drawn
 color_changed
 player_skipped
 direction_changed
+player_offline
+player_auto_play_started
+player_reconnected
 game_over
 error
 ```
@@ -571,6 +578,7 @@ room:{roomId}
 game:{roomId}
 socket:user:{userId}
 room:player:{userId}
+autoplay:room:{roomId}:player:{userId}
 ```
 
 `game:{roomId}` 示例：
@@ -594,6 +602,52 @@ room:player:{userId}
 ```
 
 Redis 状态需要设置 TTL，避免废弃房间长期占用内存。
+
+### 6.1 断线托管与重连设计
+
+服务端需要明确区分三种状态：
+
+```text
+online：玩家 socket 正常连接
+offline：玩家断线但还未托管
+autoPlaying：玩家断线超过阈值，由 AI 代打
+```
+
+时间策略：
+
+```text
+0 秒：检测到 socket 断开，标记 offline
+0-15 秒：等待客户端自动重连
+15 秒：进入 autoPlaying，服务端广播托管开始
+15 秒以后：轮到该玩家时由托管 AI 行动
+10 分钟：仍保留对局座位，直到本局结束
+```
+
+客户端重连策略：
+
+- WebSocket 断开后立即重连。
+- 1 秒、2 秒、4 秒、8 秒退避，之后每 8 秒重试。
+- 回到前台后立即重连。
+- 重连成功后发送 `reconnect`。
+- 如果客户端不知道房间号，调用服务端通过 `room:player:{userId}` 查找未结束房间。
+
+服务端重连处理：
+
+- 校验 token。
+- 查询玩家是否属于未结束房间。
+- 恢复 socket 映射。
+- 设置 `online = true`。
+- 设置 `isAutoPlaying = false`。
+- 下发完整 `room_state` 和当前玩家视角 `game_state`。
+- 广播 `player_reconnected`。
+
+托管行动策略：
+
+- 托管 AI 使用快速稳定策略。
+- 有合法牌则优先出第一张合法牌。
+- 无合法牌则摸牌。
+- 需要选择颜色时选择自己手牌最多的颜色。
+- 托管行动一旦执行，不因玩家重连而回滚。
 
 ## 7. 数据库设计
 
