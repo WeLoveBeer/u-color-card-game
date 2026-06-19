@@ -307,6 +307,8 @@ specialPacks: ['color_lock']
 
 ## 8. AI 对接
 
+详细 AI 策略见 `doc/ai_strategy_design.md`。本章节只定义规则引擎与 AI 的接口边界。
+
 AI 不能写死标准规则，必须读取 `RuleConfig`。
 
 AI 输入：
