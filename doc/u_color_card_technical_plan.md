@@ -39,6 +39,7 @@
 
 - 客户端只负责展示和发送操作。
 - 服务端负责洗牌、发牌、规则校验、胜负判断。
+- 规则引擎必须配置化和可扩展，不能把标准规则写死在流程里。
 - 好友房对局状态放 Redis。
 - 用户、广告奖励、对局记录放 PostgreSQL。
 - 广告不能影响好友房公平胜负。
@@ -280,6 +281,9 @@ ConfigService：
 - 远程配置。
 - 广告开关。
 - 活动配置。
+- 规则包配置。
+- 特殊牌配置。
+- 房间默认规则配置。
 
 ### 3.4 API 设计
 
@@ -450,6 +454,100 @@ class GameEngine {
   checkGameOver(state: GameState): boolean {}
 }
 ```
+
+### 5.1 规则配置模型
+
+规则系统需要支持后续特殊玩法扩展。首版实现标准规则，但数据结构必须预留规则开关和特殊牌包。
+
+```ts
+type RuleConfig = {
+  playerCount: 2 | 3 | 4;
+  initialCards: 5 | 7 | 9;
+  turnSeconds: 15 | 30 | 60;
+  ruleSet: 'simple' | 'standard' | 'party';
+  plusTwoStack: boolean;
+  plusFourStack: boolean;
+  mixedDrawStack: boolean;
+  sameColorDump: boolean;
+  plusFourEnabled: boolean;
+  specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
+  aiFill: boolean;
+  rounds: 1 | 3 | 5;
+};
+```
+
+首版默认：
+
+```ts
+const DEFAULT_RULE_CONFIG: RuleConfig = {
+  playerCount: 4,
+  initialCards: 7,
+  turnSeconds: 30,
+  ruleSet: 'standard',
+  plusTwoStack: false,
+  plusFourStack: false,
+  mixedDrawStack: false,
+  sameColorDump: false,
+  plusFourEnabled: true,
+  specialPacks: [],
+  aiFill: true,
+  rounds: 1
+};
+```
+
+### 5.2 规则引擎拆分
+
+不要把所有出牌逻辑写在一个巨大 `if/else` 中。建议拆成：
+
+```text
+RuleValidator：判断能不能出牌
+EffectResolver：结算功能牌效果
+TurnResolver：计算下一位玩家
+DeckResolver：洗牌、发牌、摸牌
+ScoreResolver：结算排名和分数
+RuleConfigResolver：把房间设置转换为规则配置
+```
+
+特殊牌效果使用处理器注册：
+
+```ts
+type CardEffectHandler = {
+  type: string;
+  canPlay(ctx: RuleContext, card: Card): boolean;
+  resolve(ctx: RuleContext, card: Card): EffectResult;
+};
+```
+
+后续新增气球牌、交换手牌牌、颜色封锁牌时，只新增对应 handler，不改标准牌主流程。
+
+### 5.3 后续规则扩展示例
+
+同色全出：
+
+- 配置项：`sameColorDump`。
+- 允许玩家一次提交多张同色牌。
+- 服务端按提交顺序校验每张牌。
+- 最后一张功能牌才触发主要效果，避免一次打多张功能牌导致结算混乱。
+
+加二 / 加四叠加：
+
+- 配置项：`plusTwoStack`、`plusFourStack`、`mixedDrawStack`。
+- 服务端维护 `pendingDrawCount` 和 `pendingDrawSource`。
+- 玩家如果能继续叠加，则允许出对应加牌。
+- 玩家不能叠加时，必须摸累计张数并跳过回合。
+
+气球牌：
+
+- 配置项：`specialPacks` 包含 `balloon`。
+- 效果可以是随机改变当前颜色，或让下家下回合先摸 1 张。
+- 随机结果必须由服务端生成并下发。
+
+规则扩展要求：
+
+- 每个新规则都要有服务端单元测试。
+- 每个新特殊牌都要有客户端动画状态。
+- 房间创建时保存完整规则配置，结算记录中保存规则快照。
+- AI 决策必须读取当前 `RuleConfig`，不能假设永远是标准规则。
 
 服务端必须校验：
 
