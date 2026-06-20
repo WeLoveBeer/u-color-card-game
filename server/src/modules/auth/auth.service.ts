@@ -46,6 +46,16 @@ export class AuthService {
     return next;
   }
 
+  selectCardBack(userId: string, selectedCardBackId: string): UserProfileDto | null {
+    const user = this.users.get(userId);
+    if (!user) {
+      return null;
+    }
+    const next = { ...user, selectedCardBackId };
+    this.users.set(userId, next);
+    return next;
+  }
+
   private hash(input: string): string {
     let value = 0;
     for (const char of input) {

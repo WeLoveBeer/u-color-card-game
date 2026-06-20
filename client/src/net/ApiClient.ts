@@ -3,9 +3,15 @@ import type {
   AdRewardResponse,
   ApiResponse,
   AppConfigResponse,
+  CardBackListResponse,
+  ClaimTaskRewardRequest,
+  ClaimTaskRewardResponse,
   CoinLeaderboardResponse,
   CreateRoomRequest,
   CreateRoomResponse,
+  SelectCardBackRequest,
+  SelectCardBackResponse,
+  TaskListResponse,
   UserProfileDto,
   WechatLoginResponse
 } from '@shared/index.js';
@@ -37,6 +43,22 @@ export class ApiClient {
 
   async getLeaderboard(limit = 100): Promise<ApiResponse<CoinLeaderboardResponse>> {
     return this.get(`/leaderboards/coins?limit=${limit}`);
+  }
+
+  async getTasks(): Promise<ApiResponse<TaskListResponse>> {
+    return this.get('/tasks');
+  }
+
+  async claimTaskReward(request: ClaimTaskRewardRequest): Promise<ApiResponse<ClaimTaskRewardResponse>> {
+    return this.post('/tasks/claim', request);
+  }
+
+  async getCardBacks(): Promise<ApiResponse<CardBackListResponse>> {
+    return this.get('/cosmetics/card-backs');
+  }
+
+  async selectCardBack(request: SelectCardBackRequest): Promise<ApiResponse<SelectCardBackResponse>> {
+    return this.post('/cosmetics/card-backs/select', request);
   }
 
   async claimAdReward(request: AdRewardRequest): Promise<ApiResponse<AdRewardResponse>> {

@@ -70,3 +70,57 @@ export type AdRewardResponse = {
   todayClaimed: number;
   todayLimit: number;
 };
+
+export type TaskStatusDto = 'todo' | 'claimable' | 'claimed';
+
+export type TaskItemDto = {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  coinReward: number;
+  status: TaskStatusDto;
+};
+
+export type TaskListResponse = {
+  items: TaskItemDto[];
+  updatedAt: string;
+};
+
+export type ClaimTaskRewardRequest = {
+  taskId: string;
+};
+
+export type ClaimTaskRewardResponse = {
+  taskId: string;
+  coinDelta: number;
+  currentCoin: number;
+  status: TaskStatusDto;
+};
+
+export type CosmeticSourceDto = 'default' | 'reward' | 'ad_trial' | 'shop' | 'event';
+
+export type CardBackItemDto = {
+  id: string;
+  title: string;
+  assetKey: string;
+  owned: boolean;
+  selected: boolean;
+  source: CosmeticSourceDto;
+  expiresAt?: string | null;
+};
+
+export type CardBackListResponse = {
+  items: CardBackItemDto[];
+  selectedCardBackId: string;
+};
+
+export type SelectCardBackRequest = {
+  cardBackId: string;
+};
+
+export type SelectCardBackResponse = {
+  selectedCardBackId: string;
+  items: CardBackItemDto[];
+};
