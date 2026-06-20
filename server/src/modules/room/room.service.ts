@@ -4,6 +4,7 @@ import type { CreateRoomResponse } from '@shared/protocol/http.js';
 import { DEFAULT_RULE_CONFIG } from '@shared/domain/rule-config.js';
 import { PrismaService } from '../../common/prisma.service.js';
 import { RedisService } from '../../common/redis.service.js';
+import { env } from '../../common/env.js';
 import type { RoomRuntimeState } from './room.types.js';
 
 @Injectable()
@@ -43,7 +44,7 @@ export class RoomService {
         data: { id: roomId, ownerId, status: 'waiting', config }
       });
     }
-    return { roomId, wsUrl: 'ws://localhost:3000/ws' };
+    return { roomId, wsUrl: env.publicWsUrl };
   }
 
   async getRoom(roomId: string): Promise<RoomRuntimeState | null> {

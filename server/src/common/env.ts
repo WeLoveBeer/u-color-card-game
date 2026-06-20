@@ -7,5 +7,6 @@ export const env = {
   wechatAppId: process.env.WECHAT_APP_ID ?? '',
   wechatAppSecret: process.env.WECHAT_APP_SECRET ?? '',
   authTokenTtlDays: Number(process.env.AUTH_TOKEN_TTL_DAYS ?? 14),
-  wsPath: process.env.WS_PATH ?? '/ws'
+  wsPath: process.env.WS_PATH ?? '/ws',
+  publicWsUrl: process.env.PUBLIC_WS_URL ?? `ws://localhost:${process.env.PORT ?? 3000}/ws`
 };
