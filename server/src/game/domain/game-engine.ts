@@ -86,12 +86,16 @@ export class GameEngine {
     next.actionSeq = nextActionSeq(next);
     next = syncHandCounts(next);
 
-    const events: DomainEvent[] = [
-      { type: 'card_played', playerId, cardIds, publicCards: removed }
-    ];
+    const cardPlayedEvent: DomainEvent = { type: 'card_played', playerId, cardIds, publicCards: removed };
+    const events: DomainEvent[] = [cardPlayedEvent];
+    const discardCountBeforeEffect = next.discardPile.length;
 
     const effect = this.effects.resolve(next, playerId, playedCard, chooseColor);
     next = effect.state;
+    if (playedCard.type === 'same_color_dump' && cardPlayedEvent.type === 'card_played') {
+      cardPlayedEvent.publicCards = next.discardPile.slice(discardCountBeforeEffect - removed.length);
+      cardPlayedEvent.cardIds = cardPlayedEvent.publicCards.map((card) => card.id);
+    }
     events.push(...effect.events);
 
     const missedCallEvent = this.openMissedCallWindowIfNeeded(next, playerId, beforeHandCount);
@@ -231,7 +235,7 @@ export class GameEngine {
         type: 'card_drawn',
         playerId: drawPlayerId,
         count: drawn.cards.length,
-        drawReason: success ? 'challenge_success' : 'challenge_failed'
+        drawReason: action === 'draw' ? 'wild_plus_four' : success ? 'challenge_success' : 'challenge_failed'
       }
     ];
     const policy = this.applyTurnPolicy(next, playerId, { type: 'skip', targetPlayerId: playerId });
