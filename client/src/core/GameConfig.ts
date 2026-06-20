@@ -15,8 +15,8 @@ export const ENDPOINTS: Record<RuntimeEnv, EndpointConfig> = {
     wsBase: 'wss://test-game.example.com/ws'
   },
   prod: {
-    apiBase: 'https://api.example.com/api',
-    wsBase: 'wss://game.example.com/ws'
+    apiBase: 'http://121.199.78.110/api',
+    wsBase: 'ws://121.199.78.110/ws'
   }
 };
 
