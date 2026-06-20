@@ -25,6 +25,7 @@ export * from './room/CreateRoomView.js';
 export * from './room/JoinRoomView.js';
 export * from './room/RoomView.js';
 export * from './rules/RulesView.js';
+export * from './settings/SettingsView.js';
 export * from './state/GameStore.js';
 export * from './state/RoomStore.js';
 export * from './state/UserStore.js';
