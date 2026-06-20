@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UserProfileDto } from '@shared/protocol/http.js';
-import type { Ranking } from '@shared/domain/game-state.js';
+import type { GameState, Ranking } from '@shared/domain/game-state.js';
+import { DEFAULT_RULE_CONFIG } from '@shared/domain/rule-config.js';
 import { GameGateway } from './game.gateway.js';
 
 class FakeAuthService {
@@ -64,3 +65,92 @@ describe('GameGateway 金币结算', () => {
     expect(tasks.calls[0]?.winnerId).toBe('winner');
   });
 });
+
+describe('GameGateway AI 回合节奏', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('AI 当前回合会延迟执行，不会立刻出牌', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const state = gameState({ currentPlayerId: 'ai_1', turnSeq: 3 });
+    const nextState = gameState({ currentPlayerId: 'human', turnSeq: 4 });
+    const commands = {
+      getState: vi.fn(async () => state),
+      runAutoPlay: vi.fn(async () => ({
+        result: { ok: true, state: nextState },
+        events: [{ type: 'turn_changed', currentPlayerId: 'human' }]
+      }))
+    };
+    const gateway = new GameGateway({} as never, {} as never, commands as never, mapperStub() as never, new FakeTaskService() as never) as any;
+    gateway.server = serverStub();
+
+    gateway.scheduleAiTurnIfNeeded(state);
+
+    expect(commands.runAutoPlay).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(899);
+    expect(commands.runAutoPlay).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(commands.runAutoPlay).toHaveBeenCalledWith('r_ai', 'ai_1');
+  });
+
+  it('AI 延迟任务到点后如果 turnSeq 已变化则丢弃', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const scheduledState = gameState({ currentPlayerId: 'ai_1', turnSeq: 3 });
+    const staleState = gameState({ currentPlayerId: 'ai_1', turnSeq: 4 });
+    const commands = {
+      getState: vi.fn(async () => staleState),
+      runAutoPlay: vi.fn()
+    };
+    const gateway = new GameGateway({} as never, {} as never, commands as never, mapperStub() as never, new FakeTaskService() as never) as any;
+    gateway.server = serverStub();
+
+    gateway.scheduleAiTurnIfNeeded(scheduledState);
+    await vi.advanceTimersByTimeAsync(900);
+
+    expect(commands.runAutoPlay).not.toHaveBeenCalled();
+  });
+});
+
+function gameState(overrides: Partial<GameState> = {}): GameState {
+  return {
+    roomId: 'r_ai',
+    gameId: 'g_ai',
+    status: 'playing',
+    ruleConfig: DEFAULT_RULE_CONFIG,
+    players: [
+      { id: 'human', seatIndex: 0, handCount: 3, online: true, isAi: false, isAutoPlaying: false },
+      { id: 'ai_1', seatIndex: 1, handCount: 3, online: true, isAi: true, isAutoPlaying: false }
+    ],
+    deck: [],
+    discardPile: [{ id: 'top', color: 'blue', type: 'number', value: '1' }],
+    hands: { human: [], ai_1: [] },
+    currentPlayerId: 'ai_1',
+    direction: 1,
+    currentColor: 'blue',
+    pendingDrawCount: 0,
+    calledUThisTurn: {},
+    turnDeadline: Date.now() + 30000,
+    turnSeq: 1,
+    seedHash: 'seed',
+    actionSeq: 0,
+    ...overrides
+  };
+}
+
+function mapperStub() {
+  return {
+    toMessages: () => [{ type: 'turn_changed', serverTime: Date.now(), data: { currentPlayerId: 'human', turnDeadline: Date.now() + 30000, turnSeq: 4 } }]
+  };
+}
+
+function serverStub() {
+  return {
+    in: () => ({
+      fetchSockets: async () => [{ data: { userId: 'human' }, emit: vi.fn() }]
+    })
+  };
+}

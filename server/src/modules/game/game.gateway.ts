@@ -21,7 +21,10 @@ export class GameGateway {
   private server!: Server;
   private readonly socketRooms = new Map<string, string>();
   private readonly autoPlayTimers = new Map<string, NodeJS.Timeout>();
+  private readonly aiTurnTimers = new Map<string, NodeJS.Timeout>();
   private readonly autoPlayDelayMs = 15000;
+  private readonly aiThinkMinMs = 900;
+  private readonly aiThinkMaxMs = 1800;
 
   constructor(
     @Inject(AuthService) private readonly auth: AuthService,
@@ -221,7 +224,8 @@ export class GameGateway {
       room.config,
       room.players.map((player) => player.id)
     );
-    this.emitGameStart(room.roomId, message.seq, state);
+    await this.emitGameStart(room.roomId, message.seq, state);
+    this.scheduleAiTurnIfNeeded(state);
   }
 
   private async broadcastCommand(
@@ -237,16 +241,8 @@ export class GameGateway {
       return;
     }
     const settledEvents = await this.settleGameOverEvents(events);
-    for (const socket of await this.server.in(roomId).fetchSockets()) {
-      const socketUserId = socket.data.userId as string | undefined;
-      if (!socketUserId) {
-        continue;
-      }
-      const messages = this.mapper.toMessages(result.state, socketUserId, settledEvents) as WsServerMessage[];
-      for (const item of messages) {
-        socket.emit('message', { ...item, seq });
-      }
-    }
+    await this.broadcastEvents(roomId, result.state, settledEvents, seq);
+    this.scheduleAiTurnIfNeeded(result.state);
   }
 
   private async reconnect(socket: Socket, userId: string, message: Extract<WsClientMessage, { type: 'reconnect' }>): Promise<void> {
@@ -276,6 +272,7 @@ export class GameGateway {
         serverTime: Date.now(),
         data: toVisibleGameState(state, userId)
       });
+      this.scheduleAiTurnIfNeeded(state);
     }
     this.server.to(room.roomId).emit('message', {
       seq: message.seq,
@@ -311,6 +308,40 @@ export class GameGateway {
     );
   }
 
+  private scheduleAiTurnIfNeeded(state: Awaited<ReturnType<GameCommandService['getState']>>): void {
+    if (!state || state.status !== 'playing') {
+      return;
+    }
+    const current = state.players.find((player) => player.id === state.currentPlayerId);
+    if (!current?.isAi) {
+      this.clearAiTurn(state.roomId);
+      return;
+    }
+    const key = state.roomId;
+    this.clearAiTurn(state.roomId);
+    const delay = this.aiThinkDelayMs();
+    const expectedTurnSeq = state.turnSeq;
+    const playerId = current.id;
+    this.aiTurnTimers.set(
+      key,
+      setTimeout(() => {
+        void this.runScheduledAiTurn(state.roomId, playerId, expectedTurnSeq);
+      }, delay)
+    );
+  }
+
+  private clearAiTurn(roomId: string): void {
+    const timer = this.aiTurnTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.aiTurnTimers.delete(roomId);
+    }
+  }
+
+  private aiThinkDelayMs(): number {
+    return Math.floor(this.aiThinkMinMs + Math.random() * (this.aiThinkMaxMs - this.aiThinkMinMs + 1));
+  }
+
   private clearAutoPlay(roomId: string, playerId: string): void {
     const key = `${roomId}:${playerId}`;
     const timer = this.autoPlayTimers.get(key);
@@ -336,15 +367,37 @@ export class GameGateway {
       const { result, events } = await this.commands.runAutoPlay(roomId, playerId);
       if (result.ok) {
         const settledEvents = await this.settleGameOverEvents(events);
-        for (const socket of await this.server.in(roomId).fetchSockets()) {
-          const socketUserId = socket.data.userId as string | undefined;
-          if (!socketUserId) {
-            continue;
-          }
-          for (const message of this.mapper.toMessages(result.state, socketUserId, settledEvents)) {
-            socket.emit('message', message);
-          }
-        }
+        await this.broadcastEvents(roomId, result.state, settledEvents);
+        this.scheduleAiTurnIfNeeded(result.state);
+      }
+    }
+  }
+
+  private async runScheduledAiTurn(roomId: string, playerId: string, expectedTurnSeq: number): Promise<void> {
+    this.aiTurnTimers.delete(roomId);
+    const state = await this.commands.getState(roomId);
+    const current = state?.players.find((player) => player.id === playerId);
+    if (!state || state.status !== 'playing' || state.currentPlayerId !== playerId || state.turnSeq !== expectedTurnSeq || !current?.isAi) {
+      return;
+    }
+    const { result, events } = await this.commands.runAutoPlay(roomId, playerId);
+    if (!result.ok) {
+      return;
+    }
+    const settledEvents = await this.settleGameOverEvents(events);
+    await this.broadcastEvents(roomId, result.state, settledEvents);
+    this.scheduleAiTurnIfNeeded(result.state);
+  }
+
+  private async broadcastEvents(roomId: string, state: Parameters<GameEventMapper['toMessages']>[0], events: DomainEvent[], seq?: number): Promise<void> {
+    for (const socket of await this.server.in(roomId).fetchSockets()) {
+      const socketUserId = socket.data.userId as string | undefined;
+      if (!socketUserId) {
+        continue;
+      }
+      const messages = this.mapper.toMessages(state, socketUserId, events) as WsServerMessage[];
+      for (const item of messages) {
+        socket.emit('message', seq === undefined ? item : { ...item, seq });
       }
     }
   }

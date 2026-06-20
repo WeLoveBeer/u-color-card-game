@@ -42,6 +42,7 @@ function stateWithHands(hands: Record<PlayerId, Card[]>, top: Card, currentPlaye
     pendingDrawCount: 0,
     calledUThisTurn: {},
     turnDeadline: 0,
+    turnSeq: 1,
     seedHash: 'seed_ai',
     actionSeq: 0
   };

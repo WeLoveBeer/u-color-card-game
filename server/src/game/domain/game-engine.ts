@@ -63,7 +63,8 @@ export class GameEngine {
       currentColor: start.discardTop.color,
       pendingDrawCount: 0,
       calledUThisTurn: {},
-      turnDeadline: 0,
+      turnDeadline: this.nextTurnDeadline(ruleConfig),
+      turnSeq: 1,
       seedHash: options.seedHash ?? 'local_seed_hash',
       actionSeq: 0
     });
@@ -269,7 +270,13 @@ export class GameEngine {
       next.currentPlayerId = this.turns.nextPlayerId(next, actorId);
     }
     next.calledUThisTurn[actorId] = false;
+    next.turnSeq += 1;
+    next.turnDeadline = this.nextTurnDeadline(next.ruleConfig);
     return { state: next, events: [{ type: 'turn_changed', currentPlayerId: next.currentPlayerId }] };
+  }
+
+  private nextTurnDeadline(ruleConfig: RuleConfig): number {
+    return Date.now() + ruleConfig.turnSeconds * 1000;
   }
 
   private finishIfNeeded(state: GameState, playerId: PlayerId): { finished: boolean; state: GameState; events: DomainEvent[] } {

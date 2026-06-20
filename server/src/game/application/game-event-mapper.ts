@@ -25,7 +25,7 @@ export class GameEventMapper {
           return {
             type: 'turn_changed',
             serverTime,
-            data: { currentPlayerId: event.currentPlayerId, turnDeadline: state.turnDeadline, state: visibleState }
+            data: { currentPlayerId: event.currentPlayerId, turnDeadline: state.turnDeadline, turnSeq: state.turnSeq, state: visibleState }
           };
         case 'color_changed':
           return { type: 'color_changed', serverTime, data: { roomId: state.roomId, ...event, state: visibleState } };

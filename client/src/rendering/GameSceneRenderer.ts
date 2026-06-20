@@ -76,7 +76,11 @@ export class GameSceneRenderer {
       commands.push({ type: 'rect', id: `seat-${seat.playerId}`, rect, fill: seat.current ? 'rgba(250, 204, 21, 0.28)' : 'rgba(8, 47, 73, 0.68)', radius: 16, stroke: seat.current ? '#facc15' : '#7dd3fc', lineWidth: seat.current ? 3 : 1 });
       commands.push({ type: 'circle', id: `seat-${seat.playerId}-avatar`, x: rect.x + 34, y: rect.y + rect.height / 2, radius: 24, fill: seat.offline ? '#94a3b8' : '#38bdf8' });
       commands.push({ type: 'text', id: `seat-${seat.playerId}-name`, text: seat.nickname, x: rect.x + 70, y: rect.y + 38, fontSize: 22, color: '#ffffff', align: 'left', maxWidth: rect.width - 84, weight: 'medium' });
-      commands.push({ type: 'text', id: `seat-${seat.playerId}-count`, text: `${seat.handCount} 张`, x: rect.x + 70, y: rect.y + 70, fontSize: 20, color: '#dff7ff', align: 'left' });
+      commands.push({ type: 'text', id: `seat-${seat.playerId}-count`, text: `${seat.handCount} 张`, x: rect.x + 70, y: rect.y + 66, fontSize: 20, color: '#dff7ff', align: 'left' });
+      if (seat.current) {
+        const timerText = seat.thinking ? `思考中 ${seat.secondsLeft}s` : `${seat.secondsLeft}s`;
+        commands.push({ type: 'text', id: `seat-${seat.playerId}-timer`, text: timerText, x: rect.x + 70, y: rect.y + 92, fontSize: 18, color: this.timerColor(seat.timerLevel), align: 'left' });
+      }
       if (seat.badge) {
         commands.push({ type: 'text', id: `seat-${seat.playerId}-badge`, text: seat.badge, x: rect.x + rect.width - 12, y: rect.y + 28, fontSize: 18, color: '#fde68a', align: 'right' });
       }

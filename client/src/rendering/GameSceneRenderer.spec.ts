@@ -26,6 +26,7 @@ const state = (overrides: Partial<VisibleGameState> = {}): VisibleGameState => (
   pendingDrawCount: 0,
   pendingChallenge: null,
   turnDeadline: 1_000_030_000,
+  turnSeq: 1,
   stateVersion: 1,
   ...overrides
 });
@@ -64,5 +65,14 @@ describe('GameSceneRenderer', () => {
     expect(tree.commands.find((command) => command.id === 'color-picker-title')).toMatchObject({ type: 'text', text: '选择颜色' });
     expect(tree.hitAreas.filter((area) => area.action === 'choose_color').map((area) => area.payload?.color)).toEqual(['red', 'yellow', 'blue', 'green']);
   });
-});
 
+  it('当前 AI 座位会渲染思考倒计时', () => {
+    const store = new GameStore();
+    store.setState(state({ currentPlayerId: 'p2' }));
+    const model = new GameSceneController(store).build('me');
+
+    const tree = new GameSceneRenderer().render(model, { width: 1080, height: 1920 });
+
+    expect(tree.commands.find((command) => command.id === 'seat-p2-timer')).toMatchObject({ type: 'text', text: '思考中 30s' });
+  });
+});

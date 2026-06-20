@@ -35,6 +35,7 @@ const state = (overrides: Partial<VisibleGameState> = {}): VisibleGameState => (
   pendingDrawCount: 0,
   pendingChallenge: null,
   turnDeadline: 0,
+  turnSeq: 1,
   stateVersion: 1,
   ...overrides
 });

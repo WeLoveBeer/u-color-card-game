@@ -39,6 +39,9 @@ export type PlayerSeatLayoutViewModel = PlayerSeatViewModel & {
   nickname: string;
   position: 'top' | 'left' | 'right' | 'bottom';
   badge: string | null;
+  secondsLeft: number;
+  timerLevel: 'normal' | 'warning' | 'danger';
+  thinking: boolean;
 };
 
 export type LocalPlayerPanelViewModel = {
@@ -145,7 +148,10 @@ export class GameSceneController {
       ...this.playerSeatView.build(player, state.currentPlayerId),
       nickname: this.nicknameFor(player, index),
       position: positions[index] ?? 'top',
-      badge: this.playerBadge(player)
+      badge: this.playerBadge(player, state.currentPlayerId),
+      secondsLeft: this.secondsLeft(state),
+      timerLevel: this.timerLevel(this.secondsLeft(state)),
+      thinking: state.currentPlayerId === player.id && player.isAi
     }));
   }
 
@@ -154,7 +160,7 @@ export class GameSceneController {
     if (!player) {
       return null;
     }
-    const secondsLeft = Math.max(0, Math.ceil((state.turnDeadline - Date.now()) / 1000));
+    const secondsLeft = this.secondsLeft(state);
     const canCallU = state.currentPlayerId === playerId && state.myHand.length === 2;
     return {
       playerId,
@@ -221,14 +227,21 @@ export class GameSceneController {
     return player.isAi ? `AI ${index + 1}` : `玩家 ${player.seatIndex + 1}`;
   }
 
-  private playerBadge(player: PlayerState): string | null {
+  private playerBadge(player: PlayerState, currentPlayerId: string): string | null {
     if (player.isAutoPlaying) {
       return '托管';
     }
     if (!player.online) {
       return '离线';
     }
+    if (player.isAi && player.id === currentPlayerId) {
+      return '思考中';
+    }
     return player.handCount === 1 ? '剩 1 张' : null;
+  }
+
+  private secondsLeft(state: VisibleGameState): number {
+    return Math.max(0, Math.ceil((state.turnDeadline - Date.now()) / 1000));
   }
 
   private timerLevel(secondsLeft: number): LocalPlayerPanelViewModel['timerLevel'] {

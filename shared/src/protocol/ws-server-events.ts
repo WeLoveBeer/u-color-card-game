@@ -31,6 +31,7 @@ export type VisibleGameState = {
   pendingDrawCount: number;
   pendingChallenge: unknown | null;
   turnDeadline: number;
+  turnSeq: number;
   stateVersion: number;
 };
 
@@ -100,7 +101,7 @@ export type PlusFourChallengeResultMessage = WsServerEnvelope<
 >;
 export type TurnChangedMessage = WsServerEnvelope<
   'turn_changed',
-  { currentPlayerId: PlayerId; turnDeadline: number; state?: VisibleGameState }
+  { currentPlayerId: PlayerId; turnDeadline: number; turnSeq: number; state?: VisibleGameState }
 >;
 export type GameOverMessage = WsServerEnvelope<
   'game_over',

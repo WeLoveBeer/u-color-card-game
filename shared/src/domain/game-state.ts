@@ -48,6 +48,7 @@ export type GameState = {
   calledUThisTurn: Record<PlayerId, boolean>;
   missedCallWindow?: MissedCallWindow;
   turnDeadline: number;
+  turnSeq: number;
   seedHash: string;
   actionSeq: number;
 };

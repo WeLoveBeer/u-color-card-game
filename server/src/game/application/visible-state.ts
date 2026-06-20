@@ -21,6 +21,7 @@ export function toVisibleGameState(state: GameState, viewerId: PlayerId): Visibl
     pendingDrawCount: state.pendingDrawCount,
     pendingChallenge: state.pendingChallenge ?? null,
     turnDeadline: state.turnDeadline,
+    turnSeq: state.turnSeq,
     stateVersion: state.actionSeq
   };
 }

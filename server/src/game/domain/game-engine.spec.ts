@@ -47,6 +47,7 @@ function stateWithHands(
     pendingDrawCount: 0,
     calledUThisTurn: {},
     turnDeadline: 0,
+    turnSeq: 1,
     seedHash: 'seed_test',
     actionSeq: 0
   };
@@ -67,6 +68,8 @@ describe('GameEngine 规则引擎', () => {
     expect(result.ok).toBe(true);
     expect(result.state.hands.p1).toHaveLength(1);
     expect(result.state.currentPlayerId).toBe('p2');
+    expect(result.state.turnSeq).toBe(2);
+    expect(result.state.turnDeadline).toBeGreaterThan(Date.now());
     expect(result.events.some((event) => event.type === 'card_played')).toBe(true);
   });
 

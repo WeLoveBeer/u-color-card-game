@@ -41,6 +41,7 @@ export class WechatCanvasRuntime {
     this.dropZone = null;
     this.handRects = [];
     this.game = null;
+    this.aiTimer = null;
   }
 
   async start() {
@@ -239,13 +240,17 @@ export class WechatCanvasRuntime {
       currentColor: discard.color,
       currentIndex: 0,
       direction: 1,
+      turnStartedAt: Date.now(),
+      turnSeconds: 30,
       message: '轮到你出牌',
       calledU: false,
       finished: false,
       drawChoice: null
     };
     this.selectedCardId = null;
+    this.clearAiTimer();
     this.scene = 'game';
+    this.scheduleAiTurn();
   }
 
   createDeck() {
@@ -356,24 +361,48 @@ export class WechatCanvasRuntime {
       return;
     }
     this.advanceTurn();
-    this.runAiTurns();
+    this.scheduleAiTurn();
   }
 
-  runAiTurns() {
-    let guard = 0;
-    while (!this.game.finished && this.currentPlayer().id !== 'me' && guard < 8) {
-      guard += 1;
-      const ai = this.currentPlayer();
-      const playable = ai.hand.find((card) => this.isPlayable(card));
-      if (playable) {
-        this.playCard(ai, playable);
-      } else {
-        this.drawTo(ai, 1);
-        this.game.message = `${ai.name} 摸牌`;
+  scheduleAiTurn() {
+    this.clearAiTimer();
+    if (!this.game || this.game.finished || this.currentPlayer().id === 'me') {
+      if (this.game && !this.game.finished && this.currentPlayer().id === 'me') {
+        this.game.message = this.playableCards().length > 0 ? '轮到你出牌' : '无可出牌，点击牌堆摸牌';
       }
-      if (!this.game.finished) {
-        this.advanceTurn();
-      }
+      return;
+    }
+    const expectedIndex = this.game.currentIndex;
+    const delay = 900 + Math.floor(Math.random() * 901);
+    this.game.message = `${this.currentPlayer().name} 思考中`;
+    this.aiTimer = setTimeout(() => {
+      this.aiTimer = null;
+      this.runAiTurn(expectedIndex);
+    }, delay);
+  }
+
+  clearAiTimer() {
+    if (this.aiTimer) {
+      clearTimeout(this.aiTimer);
+      this.aiTimer = null;
+    }
+  }
+
+  runAiTurn(expectedIndex) {
+    if (!this.game || this.game.finished || this.game.currentIndex !== expectedIndex || this.currentPlayer().id === 'me') {
+      return;
+    }
+    const ai = this.currentPlayer();
+    const playable = ai.hand.find((card) => this.isPlayable(card));
+    if (playable) {
+      this.playCard(ai, playable);
+    } else {
+      this.drawTo(ai, 1);
+      this.game.message = `${ai.name} 摸牌`;
+    }
+    if (!this.game.finished) {
+      this.advanceTurn();
+      this.scheduleAiTurn();
     }
     if (!this.game.finished && this.currentPlayer().id === 'me') {
       this.game.message = this.playableCards().length > 0 ? '轮到你出牌' : '无可出牌，点击牌堆摸牌';
@@ -426,6 +455,7 @@ export class WechatCanvasRuntime {
   advanceTurn() {
     const length = this.game.players.length;
     this.game.currentIndex = (this.game.currentIndex + this.game.direction + length) % length;
+    this.game.turnStartedAt = Date.now();
   }
 
   currentPlayer() {
@@ -720,7 +750,11 @@ export class WechatCanvasRuntime {
     this.avatar(ax, y - 14, avatarSize, position === 'top' ? 'ai' : 'avatar');
     this.text(name, x + 76, y + 25, 20, COLORS.white, '900');
     this.coinMini(x + w - 58, y + 16, score);
-    this.text(`手牌 ${cards} 张`, x + 78, y + 50, 13, '#d9e8ff', '700');
+    this.text(`手牌 ${cards} 张`, x + 78, y + 48, 13, '#d9e8ff', '700');
+    if (active) {
+      const label = name === '我' ? `${this.turnSecondsLeft()}s` : `思考中 ${this.turnSecondsLeft()}s`;
+      this.text(label, x + 78, y + 64, 12, '#ffe066', '900');
+    }
   }
 
   sidePlayer(x, y, name, score, cards) {
@@ -730,7 +764,18 @@ export class WechatCanvasRuntime {
     this.text(name, x + 34, y + 76, 17, COLORS.white, '900', 'center');
     this.coinMini(x + 16, y + 88, score);
     this.text(`手牌 ${cards} 张`, x + 34, y + 118, 12, '#dce9ff', '700', 'center');
+    if (active) {
+      this.text(`思考 ${this.turnSecondsLeft()}s`, x + 34, y + 136, 11, '#ffe066', '900', 'center');
+    }
     for (let i = 0; i < Math.min(cards, 5); i += 1) this.cardBack(x + 4, y + 142 + i * 22, 56, 78, 0);
+  }
+
+  turnSecondsLeft() {
+    if (!this.game) {
+      return 0;
+    }
+    const elapsed = Math.floor((Date.now() - this.game.turnStartedAt) / 1000);
+    return Math.max(0, this.game.turnSeconds - elapsed);
   }
 
   colorPill(x, y, w, h, label) {

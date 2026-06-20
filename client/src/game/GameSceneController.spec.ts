@@ -26,6 +26,7 @@ const state = (overrides: Partial<VisibleGameState> = {}): VisibleGameState => (
   pendingDrawCount: 0,
   pendingChallenge: null,
   turnDeadline: 1_000_030_000,
+  turnSeq: 1,
   stateVersion: 1,
   ...overrides
 });
@@ -78,6 +79,22 @@ describe('GameSceneController', () => {
 
     expect(model.prompt).toBe('没有可出牌，点击牌堆摸牌');
     expect(model.table.deck).toMatchObject({ highlighted: true, arrowVisible: true, confirmRequired: false });
+  });
+
+  it('当前回合是 AI 时，对手座位会显示思考和倒计时状态', () => {
+    const store = new GameStore();
+    store.setState(state({ currentPlayerId: 'p2' }));
+
+    const model = new GameSceneController(store).build('me');
+    const aiSeat = model.seats.find((seat) => seat.playerId === 'p2');
+
+    expect(aiSeat).toMatchObject({
+      current: true,
+      thinking: true,
+      badge: '思考中',
+      secondsLeft: 30,
+      timerLevel: 'normal'
+    });
   });
 
   it('变色牌会打开颜色选择器并推荐手牌最多的颜色', () => {
