@@ -10,6 +10,7 @@ export * from './core/EventBus.js';
 export * from './core/GameConfig.js';
 export * from './core/Storage.js';
 export * from './domain/ClientPlayableCardService.js';
+export * from './feedback/FeedbackView.js';
 export * from './game/GameAnimationOrchestrator.js';
 export * from './game/GameInteractionController.js';
 export * from './game/GameSceneController.js';
