@@ -72,8 +72,20 @@ export class WechatCanvasRuntime {
       ai: `${this.options.assetsBase}/avatars/ai_wave.svg`,
       'avatar.player.default': `${this.options.assetsBase}/avatars/player_default.svg`,
       'avatar.ai.wave': `${this.options.assetsBase}/avatars/ai_wave.svg`,
-      'background.lobby': `${this.options.assetsBase}/backgrounds/lobby_bg.svg`
+      'background.lobby': `${this.options.assetsBase}/backgrounds/lobby_bg.svg`,
+      'background.table': `${this.options.assetsBase}/backgrounds/table_bg.svg`,
+      'card_back.default': `${this.options.assetsBase}/cards/card_back_default.svg`,
+      'card.wild.color': `${this.options.assetsBase}/cards/wild_color.svg`,
+      'card.wild.plus4': `${this.options.assetsBase}/cards/wild_plus4.svg`
     };
+    for (const color of ['red', 'yellow', 'blue', 'green']) {
+      for (let value = 0; value <= 9; value += 1) {
+        assets[`card.${color}.${value}`] = `${this.options.assetsBase}/cards/${color}_${value}.svg`;
+      }
+      for (const type of ['skip', 'reverse', 'plus2']) {
+        assets[`card.${color}.${type}`] = `${this.options.assetsBase}/cards/${color}_${type}.svg`;
+      }
+    }
     await Promise.all(
       Object.entries(assets).map(([key, src]) =>
         this.loadImage(src).then((image) => {
@@ -580,8 +592,16 @@ export class WechatCanvasRuntime {
     };
   }
 
-  handleRenderAction(action) {
+  handleRenderAction(action, payload = {}) {
     if (action === 'quick_ai') {
+      this.startLocalGame();
+    } else if (action === 'draw_card') {
+      this.drawCard();
+    } else if (action === 'select_card') {
+      this.tapCard(payload.cardId);
+    } else if (action === 'call_u') {
+      this.callU();
+    } else if (action === 'restart_local_game') {
       this.startLocalGame();
     } else if (action === 'create_room' || action === 'join_room') {
       this.toast('好友房需连接服务端');
@@ -665,41 +685,161 @@ export class WechatCanvasRuntime {
       this.startLocalGame();
       return;
     }
+    const tree = this.buildGameRenderTree();
+    this.renderDriver.draw(tree);
+    this.handRects.push(...tree.handRects);
+    this.dropZone = tree.dropZone;
+    this.hitAreas.push(...tree.hitAreas.map((area) => this.toWechatHitArea(area)));
+  }
+
+  buildGameRenderTree() {
     const w = this.width;
     const h = this.height;
-    this.drawTableBackground();
-    this.iconButton(18, 18, 44, 'book', () => {
-      this.scene = 'rules';
-    });
-    this.iconButton(72, 18, 44, 'gear', () => {
-      this.scene = 'settings';
-    });
-    this.playerBadge(w / 2 - 78, 34, 156, 64, this.game.players[1].name, 35, this.game.players[1].hand.length, 'top');
-    this.sidePlayer(6, h * 0.25, this.game.players[2].name, 42, this.game.players[2].hand.length, 'left');
-    this.sidePlayer(w - 74, h * 0.25, this.game.players[3].name, 28, this.game.players[3].hand.length, 'right');
-    this.colorPill(w / 2 - 74, h * 0.24, 148, 34, `当前颜色：${this.colorName(this.game.currentColor)}`);
-    this.directionRing(w / 2, h * 0.43, Math.min(w * 0.25, 110), CARD_COLORS[this.game.currentColor]);
-    const deckRect = { x: w * 0.25 - 42, y: h * 0.43 - 46, w: 82, h: 112 };
-    this.drawDeck(deckRect.x, deckRect.y, this.currentPlayer().id === 'me' && this.playableCards().length === 0);
-    this.hitAreas.push({ ...deckRect, onTap: () => this.drawCard() });
-    const discardRect = { x: w * 0.58 - 34, y: h * 0.43 - 54, w: 84, h: 118 };
-    this.dropZone = { x: discardRect.x - 28, y: discardRect.y - 28, w: discardRect.w + 56, h: discardRect.h + 56 };
-    if (this.drag?.active && this.dropZone) {
-      this.roundRect(this.dropZone.x, this.dropZone.y, this.dropZone.w, this.dropZone.h, 18, 'rgba(93,234,255,0.16)', '#5deaff', 3);
+    const margin = Math.max(16, Math.round(w * 0.04));
+    const commands = [
+      { type: 'rect', id: 'game-bg', rect: { x: 0, y: 0, width: w, height: h }, fill: '#071538' },
+      { type: 'image', id: 'table-bg', assetKey: 'background.table', rect: { x: 0, y: 0, width: w, height: h }, alpha: 0.9 },
+      { type: 'rect', id: 'top-bar', rect: { x: margin, y: 18, width: w - margin * 2, height: 58 }, fill: 'rgba(8,47,73,0.72)', radius: 14 },
+      { type: 'text', id: 'game-prompt', text: this.game.message, x: margin + 18, y: 55, fontSize: 20, color: '#ffffff', align: 'left', weight: 'medium', maxWidth: w - margin * 2 - 150 },
+      { type: 'text', id: 'game-rules', text: '规则', x: w - margin - 92, y: 54, fontSize: 17, color: '#ffffff', align: 'center' },
+      { type: 'text', id: 'game-settings', text: '设置', x: w - margin - 36, y: 54, fontSize: 17, color: '#ffffff', align: 'center' }
+    ];
+    const hitAreas = [
+      { id: 'hit-rules', action: 'rules', rect: { x: w - margin - 120, y: 24, width: 54, height: 44 } },
+      { id: 'hit-settings', action: 'settings', rect: { x: w - margin - 64, y: 24, width: 54, height: 44 } }
+    ];
+    const handRects = [];
+    this.pushSeatCommands(commands, this.game.players[1], { x: w / 2 - 92, y: 92, width: 184, height: 62 }, 'top');
+    this.pushSeatCommands(commands, this.game.players[2], { x: 8, y: h * 0.29, width: 76, height: 118 }, 'side');
+    this.pushSeatCommands(commands, this.game.players[3], { x: w - 84, y: h * 0.29, width: 76, height: 118 }, 'side');
+    commands.push(
+      { type: 'rect', id: 'color-pill', rect: { x: w / 2 - 74, y: h * 0.24, width: 148, height: 34 }, fill: 'rgba(3,31,75,0.82)', radius: 17 },
+      { type: 'text', id: 'color-pill-text', text: `当前颜色：${this.colorName(this.game.currentColor)}`, x: w / 2, y: h * 0.24 + 23, fontSize: 16, color: '#d8e8ff', align: 'center', weight: 'bold' }
+    );
+    const centerX = w / 2;
+    const centerY = h * 0.43;
+    const ringRadius = Math.min(w * 0.27, 116);
+    commands.push(
+      { type: 'arc', id: 'direction-ring', x: centerX, y: centerY, radius: ringRadius, startAngle: -0.45, endAngle: Math.PI * 1.78, stroke: CARD_COLORS[this.game.currentColor], lineWidth: 10 },
+      { type: 'text', id: 'direction-arrow', text: this.game.direction > 0 ? '>' : '<', x: centerX + ringRadius - 8, y: centerY - 4, fontSize: 28, color: '#ffffff', align: 'center', weight: 'bold' }
+    );
+    const cardW = Math.min(86, w * 0.22);
+    const cardH = Math.round(cardW * 1.42);
+    const drawPile = { x: centerX - cardW - 22, y: centerY - cardH / 2, width: cardW, height: cardH };
+    const discardPile = { x: centerX + 22, y: centerY - cardH / 2, width: cardW, height: cardH };
+    const drawHighlighted = this.currentPlayer().id === 'me' && this.playableCards().length === 0;
+    if (drawHighlighted) {
+      commands.push({ type: 'rect', id: 'draw-glow', rect: this.inflateRect(drawPile, 8), fill: 'rgba(250,204,21,0.18)', radius: 14, stroke: '#facc15', lineWidth: 3 });
     }
-    this.drawDiscard(discardRect.x, discardRect.y);
-    this.speechBubble(w / 2 - 95, h * 0.575, 190, 42, this.game.message);
-    this.playerBadge(24, h * 0.64, 170, 62, '我', 56, this.me().hand.length, 'bottom');
-    this.redButton(w - 132, h * 0.65, 94, 50, '喊 U', () => this.callU());
-    this.turnHint(w / 2, h * 0.75);
-    this.handCards(h - 122);
+    commands.push(
+      { type: 'image', id: 'draw-pile', assetKey: 'card_back.default', rect: drawPile, alpha: drawHighlighted ? 1 : 0.86 },
+      { type: 'image', id: 'discard-pile', assetKey: this.cardAssetKey(this.game.discard), rect: discardPile },
+      { type: 'text', id: 'deck-count', text: String(this.game.deck.length), x: drawPile.x + drawPile.width / 2, y: drawPile.y + drawPile.height + 24, fontSize: 18, color: '#e0f2fe', align: 'center', weight: 'bold' }
+    );
+    hitAreas.push({ id: 'hit-draw-pile', action: 'draw_card', rect: drawPile });
+    const dropZone = { x: discardPile.x - 24, y: discardPile.y - 24, w: discardPile.width + 48, h: discardPile.height + 48 };
+    if (this.drag?.active) {
+      commands.push({ type: 'rect', id: 'drop-zone', rect: { x: dropZone.x, y: dropZone.y, width: dropZone.w, height: dropZone.h }, fill: 'rgba(93,234,255,0.16)', radius: 18, stroke: '#5deaff', lineWidth: 3 });
+    }
+    const localPanel = { x: margin, y: h * 0.64, width: w - margin * 2, height: 68 };
+    commands.push(
+      { type: 'rect', id: 'local-panel', rect: localPanel, fill: this.currentPlayer().id === 'me' ? 'rgba(14,116,144,0.88)' : 'rgba(8,47,73,0.78)', radius: 17, stroke: this.currentPlayer().id === 'me' ? '#facc15' : '#7dd3fc', lineWidth: 2 },
+      { type: 'text', id: 'local-title', text: `我 · 手牌 ${this.me().hand.length} 张`, x: localPanel.x + 20, y: localPanel.y + 29, fontSize: 20, color: '#ffffff', align: 'left', weight: 'bold' },
+      { type: 'text', id: 'local-timer', text: `${this.turnSecondsLeft()}s`, x: localPanel.x + 20, y: localPanel.y + 54, fontSize: 18, color: this.turnSecondsLeft() <= 5 ? '#fca5a5' : '#dff7ff', align: 'left', weight: 'medium' },
+      { type: 'rect', id: 'call-u-button', rect: { x: localPanel.x + localPanel.width - 102, y: localPanel.y + 12, width: 88, height: 44 }, fill: '#ef4444', radius: 14 },
+      { type: 'text', id: 'call-u-text', text: '喊 U', x: localPanel.x + localPanel.width - 58, y: localPanel.y + 41, fontSize: 22, color: '#ffffff', align: 'center', weight: 'bold' }
+    );
+    hitAreas.push({ id: 'hit-call-u', action: 'call_u', rect: { x: localPanel.x + localPanel.width - 102, y: localPanel.y + 12, width: 88, height: 44 } });
+    commands.push({ type: 'text', id: 'turn-hint', text: this.currentPlayer().id === 'me' ? '轮到你出牌' : '等待对手出牌', x: w / 2, y: h * 0.75, fontSize: 20, color: '#ffe066', align: 'center', weight: 'bold' });
+    this.pushHandCommands(commands, hitAreas, handRects, h - 126);
     if (this.game.finished) {
-      this.roundRect(32, h * 0.34, w - 64, 150, 18, 'rgba(5,23,50,0.9)', '#7bb7ff', 2);
-      this.text(this.game.message, w / 2, h * 0.34 + 60, 26, COLORS.white, '900', 'center');
-      this.roundRect(w / 2 - 84, h * 0.34 + 88, 168, 44, 12, COLORS.green, '#a3ffb4', 2);
-      this.text('再来一局', w / 2, h * 0.34 + 117, 21, COLORS.white, '900', 'center');
-      this.hitAreas.push({ x: w / 2 - 84, y: h * 0.34 + 88, w: 168, h: 44, onTap: () => this.startLocalGame() });
+      const overlay = { x: 32, y: h * 0.34, width: w - 64, height: 150 };
+      commands.push(
+        { type: 'rect', id: 'result-overlay', rect: overlay, fill: 'rgba(5,23,50,0.92)', radius: 18, stroke: '#7bb7ff', lineWidth: 2 },
+        { type: 'text', id: 'result-message', text: this.game.message, x: w / 2, y: overlay.y + 60, fontSize: 26, color: '#ffffff', align: 'center', weight: 'bold', maxWidth: overlay.width - 32 },
+        { type: 'rect', id: 'restart-button', rect: { x: w / 2 - 84, y: overlay.y + 88, width: 168, height: 44 }, fill: COLORS.green, radius: 12, stroke: '#a3ffb4', lineWidth: 2 },
+        { type: 'text', id: 'restart-text', text: '再来一局', x: w / 2, y: overlay.y + 117, fontSize: 21, color: '#ffffff', align: 'center', weight: 'bold' }
+      );
+      hitAreas.push({ id: 'hit-restart', action: 'restart_local_game', rect: { x: w / 2 - 84, y: overlay.y + 88, width: 168, height: 44 } });
     }
+    return { width: w, height: h, commands, hitAreas, handRects, dropZone };
+  }
+
+  pushSeatCommands(commands, player, rect, mode) {
+    const active = this.game && this.currentPlayer().id === player.id;
+    commands.push(
+      { type: 'rect', id: `seat-${player.id}`, rect, fill: active ? 'rgba(250,204,21,0.26)' : 'rgba(8,47,73,0.68)', radius: 16, stroke: active ? '#facc15' : '#7dd3fc', lineWidth: active ? 3 : 1 },
+      { type: 'circle', id: `seat-${player.id}-avatar`, x: mode === 'top' ? rect.x + 34 : rect.x + rect.width / 2, y: mode === 'top' ? rect.y + rect.height / 2 : rect.y + 28, radius: mode === 'top' ? 23 : 24, fill: '#38bdf8' }
+    );
+    if (mode === 'top') {
+      commands.push(
+        { type: 'text', id: `seat-${player.id}-name`, text: player.name, x: rect.x + 68, y: rect.y + 27, fontSize: 18, color: '#ffffff', align: 'left', weight: 'bold' },
+        { type: 'text', id: `seat-${player.id}-count`, text: `${player.hand.length} 张`, x: rect.x + 68, y: rect.y + 50, fontSize: 14, color: '#dff7ff', align: 'left' }
+      );
+      if (active) {
+        commands.push({ type: 'text', id: `seat-${player.id}-timer`, text: `思考中 ${this.turnSecondsLeft()}s`, x: rect.x + rect.width - 12, y: rect.y + 25, fontSize: 13, color: '#fde68a', align: 'right', weight: 'bold' });
+      }
+      return;
+    }
+    commands.push(
+      { type: 'text', id: `seat-${player.id}-name`, text: player.name, x: rect.x + rect.width / 2, y: rect.y + 70, fontSize: 16, color: '#ffffff', align: 'center', weight: 'bold' },
+      { type: 'text', id: `seat-${player.id}-count`, text: `${player.hand.length} 张`, x: rect.x + rect.width / 2, y: rect.y + 96, fontSize: 12, color: '#dff7ff', align: 'center' }
+    );
+    if (active) {
+      commands.push({ type: 'text', id: `seat-${player.id}-timer`, text: `思考 ${this.turnSecondsLeft()}s`, x: rect.x + rect.width / 2, y: rect.y + 114, fontSize: 11, color: '#fde68a', align: 'center', weight: 'bold' });
+    }
+  }
+
+  pushHandCommands(commands, hitAreas, handRects, y) {
+    const hand = this.me().hand;
+    const panel = { x: 14, y: y - 14, width: this.width - 28, height: 132 };
+    commands.push({ type: 'rect', id: 'hand-panel', rect: panel, fill: 'rgba(2,44,34,0.70)', radius: 18 });
+    const cardW = Math.min(64, Math.floor((this.width - 54) / Math.min(hand.length || 1, 7)));
+    const cardH = Math.round(cardW * 1.44);
+    const gap = hand.length > 7 ? Math.round(cardW * 0.56) : Math.round(cardW * 0.78);
+    const totalWidth = hand.length > 0 ? cardW + gap * (hand.length - 1) : 0;
+    const start = hand.length > 7 ? panel.x + 18 : this.width / 2 - totalWidth / 2;
+    const playableIds = new Set(this.playableCards().map((card) => card.id));
+    hand.forEach((card, index) => {
+      const selected = this.selectedCardId === card.id;
+      const playable = playableIds.has(card.id) && this.currentPlayer().id === 'me';
+      const lift = selected ? -36 : playable ? -16 : 0;
+      const rect = { x: start + index * gap, y: y + lift, width: cardW, height: cardH };
+      handRects.push({ x: rect.x, y: rect.y, w: rect.width, h: rect.height, card });
+      if (!this.drag || this.drag.cardId !== card.id) {
+        commands.push({ type: 'image', id: `hand-card-${card.id}`, assetKey: this.cardAssetKey(card), rect, alpha: playable ? 1 : 0.55, rotation: (index - (hand.length - 1) / 2) * 0.045 });
+        if (playable) {
+          commands.push({ type: 'rect', id: `hand-card-${card.id}-glow`, rect: this.inflateRect(rect, 4), fill: 'rgba(250,204,21,0.10)', radius: 11, stroke: '#fde047', lineWidth: selected ? 3 : 2 });
+        }
+      }
+      hitAreas.push({ id: `hit-card-${card.id}`, action: 'select_card', rect, payload: { cardId: card.id } });
+    });
+    if (this.drag) {
+      const card = hand.find((item) => item.id === this.drag.cardId);
+      if (card) {
+        commands.push({ type: 'image', id: `drag-card-${card.id}`, assetKey: this.cardAssetKey(card), rect: { x: this.drag.x - cardW / 2, y: this.drag.y - cardH / 2, width: cardW, height: cardH } });
+      }
+    }
+  }
+
+  cardAssetKey(card) {
+    if (card.type === 'wild') {
+      return 'card.wild.color';
+    }
+    if (card.type === 'plus4') {
+      return 'card.wild.plus4';
+    }
+    if (card.type === 'plus2') {
+      return `card.${card.color}.plus2`;
+    }
+    if (card.type === 'reverse' || card.type === 'skip') {
+      return `card.${card.color}.${card.type}`;
+    }
+    return `card.${card.color}.${card.label}`;
+  }
+
+  inflateRect(rect, amount) {
+    return { x: rect.x - amount, y: rect.y - amount, width: rect.width + amount * 2, height: rect.height + amount * 2 };
   }
 
   drawPageShell(title) {
