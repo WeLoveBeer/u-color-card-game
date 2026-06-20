@@ -13,6 +13,7 @@ import type { WsServerMessage } from '@shared/protocol/ws-server-events.js';
 import { GameCommandService, GameEventMapper, toVisibleGameState } from '../../game/application/index.js';
 import { AuthService } from '../auth/auth.service.js';
 import { RoomService } from '../room/room.service.js';
+import { TaskService } from '../task/task.service.js';
 
 @WebSocketGateway({ path: '/ws', cors: true })
 export class GameGateway {
@@ -26,7 +27,8 @@ export class GameGateway {
     @Inject(AuthService) private readonly auth: AuthService,
     @Inject(RoomService) private readonly rooms: RoomService,
     @Inject(GameCommandService) private readonly commands: GameCommandService,
-    @Inject(GameEventMapper) private readonly mapper: GameEventMapper
+    @Inject(GameEventMapper) private readonly mapper: GameEventMapper,
+    @Inject(TaskService) private readonly tasks: TaskService
   ) {}
 
   async handleConnection(socket: Socket): Promise<void> {
@@ -352,6 +354,7 @@ export class GameGateway {
       if (event.type !== 'game_over') {
         return event;
       }
+      this.tasks.recordGameOver(event.winnerId, event.rankings);
       return { ...event, coinDeltas: this.settleCoinDeltas(event.winnerId, event.rankings) };
     });
   }

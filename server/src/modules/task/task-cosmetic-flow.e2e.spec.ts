@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module.js';
+import { TaskService } from './task.service.js';
 
 async function login(baseUrl: string, code: string) {
   const response = await request(baseUrl).post('/api/auth/wechat-login').send({ code }).expect(201);
@@ -15,9 +16,11 @@ async function login(baseUrl: string, code: string) {
 describe('任务与牌背接口流程', () => {
   let app: INestApplication;
   let baseUrl: string;
+  let tasks: TaskService;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    tasks = moduleRef.get(TaskService);
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     await app.listen(0);
@@ -40,9 +43,15 @@ describe('任务与牌背接口流程', () => {
       .expect((response) => {
         expect(response.body.data.items.find((item: { id: string }) => item.id === 'daily_ai_game')).toMatchObject({
           coinReward: 50,
-          status: 'claimable'
+          progress: 0,
+          status: 'todo'
         });
       });
+
+    tasks.recordGameOver(user.userId, [
+      { playerId: user.userId, rank: 1, remainCardCount: 0, score: 0 },
+      { playerId: 'ai_1', rank: 2, remainCardCount: 2, score: 20 }
+    ]);
 
     await request(baseUrl)
       .post('/api/tasks/claim')

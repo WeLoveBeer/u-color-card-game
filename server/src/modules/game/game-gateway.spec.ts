@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UserProfileDto } from '@shared/protocol/http.js';
+import type { Ranking } from '@shared/domain/game-state.js';
 import { GameGateway } from './game.gateway.js';
 
 class FakeAuthService {
@@ -23,10 +24,19 @@ class FakeAuthService {
   }
 }
 
+class FakeTaskService {
+  calls: Array<{ winnerId: string; rankings: Ranking[] }> = [];
+
+  recordGameOver(winnerId: string, rankings: Ranking[]): void {
+    this.calls.push({ winnerId, rankings });
+  }
+}
+
 describe('GameGateway 金币结算', () => {
   it('game_over 事件会按真实余额落账并替换 coinDeltas', () => {
     const auth = new FakeAuthService();
-    const gateway = new GameGateway(auth as never, {} as never, {} as never, {} as never) as unknown as {
+    const tasks = new FakeTaskService();
+    const gateway = new GameGateway(auth as never, {} as never, {} as never, {} as never, tasks as never) as unknown as {
       settleGameOverEvents(events: unknown[]): Array<{ type: string; coinDeltas: Array<{ playerId: string; coinDelta: number; coinAfter: number }> }>;
     };
 
@@ -50,5 +60,7 @@ describe('GameGateway 金币结算', () => {
     ]);
     expect(auth.getUser('winner')?.coin).toBe(150);
     expect(auth.getUser('loser')?.coin).toBe(0);
+    expect(tasks.calls).toHaveLength(1);
+    expect(tasks.calls[0]?.winnerId).toBe('winner');
   });
 });
