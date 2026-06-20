@@ -27,6 +27,7 @@ export * from './profile/TaskView.js';
 export * from './result/ResultView.js';
 export * from './rendering/CanvasRenderDriver.js';
 export * from './rendering/GameSceneRenderer.js';
+export * from './rendering/LobbyRenderer.js';
 export * from './rendering/RenderCommand.js';
 export * from './rendering/ResponsiveLayout.js';
 export * from './room/CreateRoomView.js';
