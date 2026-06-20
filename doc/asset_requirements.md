@@ -114,3 +114,104 @@ credit_text
 ```
 
 没有明确商用授权的素材不能进入正式包。
+
+## 5. 资源系统与商城边界
+
+资源系统必须把“资源定义”和“玩家拥有关系”分开。业务代码不要直接保存或售卖文件路径。
+
+### 5.1 AssetCatalog
+
+`AssetCatalog` 维护项目内所有可加载资源：
+
+```ts
+type AssetDefinition = {
+  assetKey: string;
+  file: string;
+  kind:
+    | 'card_face'
+    | 'card_back'
+    | 'avatar'
+    | 'avatar_frame'
+    | 'table_skin'
+    | 'icon'
+    | 'effect'
+    | 'sfx'
+    | 'voice'
+    | 'bgm';
+  package: 'main' | 'game' | 'room' | 'cdn';
+  licenseId?: string;
+};
+```
+
+要求：
+
+- 业务代码只引用 `assetKey`，不散写 `cards/blue_7.svg` 这类路径。
+- `asset_manifest.json` 只说明文件存在；`AssetCatalog` 说明文件语义和用途。
+- 人声音效通过 `AudioCatalog` 绑定到领域事件，例如 `plus_two`、`skip`、`reverse`、`color_changed:red`。
+
+### 5.2 CosmeticItem
+
+商城、广告、任务奖励只发放外观 ID，不直接发资源路径。
+
+```ts
+type CosmeticItem = {
+  id: string;
+  type: 'card_back' | 'avatar_frame' | 'table_skin' | 'voice_pack';
+  assetKey: string;
+  source: 'default' | 'reward' | 'ad_trial' | 'shop' | 'event';
+  durationSeconds?: number;
+  startsAt?: string;
+  endsAt?: string;
+};
+```
+
+玩家档案只保存：
+
+```ts
+type PlayerCosmeticSelection = {
+  selectedCardBackId: string;
+  selectedAvatarFrameId?: string;
+  selectedTableSkinId?: string;
+  selectedVoicePackId?: string;
+};
+```
+
+对局状态可以带外观 ID 方便其他客户端展示，但外观不得影响规则、发牌、胜负和金币结算。
+
+### 5.3 SkinResolver
+
+客户端用 `SkinResolver` 把外观 ID 解析为资源：
+
+```text
+selectedCardBackId -> card_back assetKey -> file path
+selectedTableSkinId -> table_skin assetKey -> file path
+selectedVoicePackId + DomainEvent -> voice/sfx assetKey -> file path
+```
+
+要求：
+
+- 玩家未拥有或外观过期时回退默认资源。
+- 广告限时体验只改变展示，不改变对局公平性。
+- CDN 资源加载失败时回退主包默认资源。
+- 结算页、排行榜页、房间页都走同一套解析，不各自拼路径。
+
+### 5.4 商城模块边界
+
+如果后续需要商城，建议只做外观商城：
+
+- 可售卖：牌背、头像框、桌面皮肤、语音包、表情或入场动效。
+- 不售卖：影响发牌、摸牌、功能牌效果、AI 强度、胜负和金币结算的道具。
+- 服务端验证购买、领取、过期时间和拥有关系。
+- 客户端只根据服务端返回的拥有关系展示可用外观。
+
+商城相关服务建议：
+
+```text
+server/modules/asset/asset-catalog.service.ts
+server/modules/asset/cosmetic.service.ts
+server/modules/reward/reward.service.ts
+
+client/assets/scripts/assets/AssetCatalog.ts
+client/assets/scripts/assets/SkinResolver.ts
+client/assets/scripts/assets/AudioCatalog.ts
+```

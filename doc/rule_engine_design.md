@@ -12,6 +12,21 @@
 - 所有规则由 `RuleConfig` 控制。
 - 后续新增特殊牌和特殊规则时，不重写主流程。
 - 每个规则和特殊牌都能单独测试。
+- 规则引擎作为纯领域层，不依赖 NestJS、Redis、PostgreSQL、WebSocket、Cocos 或微信 SDK。
+- 规则引擎只接收当前 `GameState` 和命令参数，返回新的状态、领域事件和错误码。
+
+分层边界：
+
+```text
+domain/rules
+  只负责规则判断和状态变更
+
+application/game-command.service
+  负责加锁、读写状态、调用规则引擎、写日志、映射广播事件
+
+infrastructure
+  负责 Redis、PostgreSQL、WebSocket、定时器、外部 SDK
+```
 
 ## 2. 核心数据类型
 
@@ -27,6 +42,7 @@ type CardType =
   | 'plus_two'
   | 'wild_color'
   | 'wild_plus_four'
+  | 'same_color_dump'
   | 'balloon'
   | 'swap_hand'
   | 'color_lock';
@@ -54,11 +70,17 @@ type RuleConfig = {
   callUPenalty: boolean;
   plusFourEnabled: boolean;
   plusFourChallenge: boolean;
-  specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
+  specialPacks: Array<'same_color_dump' | 'balloon' | 'swap_hand' | 'color_lock'>;
   aiFill: boolean;
   rounds: 1 | 3 | 5;
 };
 ```
+
+首版范围说明：
+
+- `same_color_dump` 首版实现 handler、卡牌资源、AI 识别和测试，但标准模式默认关闭。
+- 创建房间普通设置默认隐藏同色全出；欢乐规则包或高级配置可以开启。
+- `balloon`、`swap_hand`、`color_lock` 首版保留类型、资源和 handler 接口，具体规则可后续启用。
 
 ### 2.3 GameState
 
@@ -94,6 +116,118 @@ type GameState = {
 };
 ```
 
+### 2.4 基础共享类型
+
+以下类型是生成代码前的最小定义，避免规则、协议和 AI 各自猜字段。
+
+```ts
+type PlayerId = string;
+type RoomId = string;
+type GameId = string;
+type CardId = string;
+
+type PlayerState = {
+  id: PlayerId;
+  seatIndex: number;
+  handCount: number;
+  online: boolean;
+  isAi: boolean;
+  isAutoPlaying: boolean;
+  disconnectAt?: number | null;
+  autoPlayAt?: number | null;
+};
+
+type Ranking = {
+  playerId: PlayerId;
+  rank: number;
+  remainCardCount: number;
+  score: number;
+};
+
+type CoinDelta = {
+  playerId: PlayerId;
+  coinDelta: number;
+  coinAfter: number;
+};
+
+type DrawReason =
+  | 'normal'
+  | 'plus_two'
+  | 'wild_plus_four'
+  | 'challenge_success'
+  | 'challenge_failed'
+  | 'missed_call_penalty'
+  | 'timeout';
+
+type PlusFourResponseOption = 'draw' | 'challenge' | 'stack_plus_four';
+
+type GameErrorCode =
+  | 'NOT_YOUR_TURN'
+  | 'CARD_NOT_FOUND'
+  | 'ILLEGAL_CARD'
+  | 'COLOR_REQUIRED'
+  | 'CHALLENGE_NOT_ALLOWED'
+  | 'CHALLENGE_REQUIRED'
+  | 'CATCH_NOT_ALLOWED'
+  | 'ACTION_TIMEOUT'
+  | 'GAME_NOT_STARTED';
+
+type RuleContext = {
+  state: GameState;
+  playerId: PlayerId;
+  card?: Card;
+  chooseColor?: Exclude<CardColor, 'wild'>;
+};
+
+type AiHint = {
+  pressureScore?: number;
+  colorPreference?: Partial<Record<Exclude<CardColor, 'wild'>, number>>;
+  preservesTurn?: boolean;
+};
+
+type NextTurnPolicy =
+  | { type: 'normal' }
+  | { type: 'skip'; targetPlayerId: PlayerId }
+  | { type: 'wait_for_response'; targetPlayerId: PlayerId }
+  | { type: 'game_over' };
+```
+
+### 2.5 GameResult 与领域事件
+
+规则引擎不直接广播 WebSocket，也不直接播放动画。所有表现由领域事件驱动。
+
+```ts
+type GameResult = {
+  ok: boolean;
+  state: GameState;
+  events: DomainEvent[];
+  errorCode?: GameErrorCode;
+};
+
+type DomainEvent =
+  | { type: 'card_played'; playerId: string; cardIds: string[]; publicCards: Card[] }
+  | { type: 'card_drawn'; playerId: string; count: number; drawReason: DrawReason }
+  | { type: 'turn_changed'; currentPlayerId: string }
+  | { type: 'effect_resolved'; effectType: CardType; targetPlayerIds: string[] }
+  | { type: 'color_changed'; playerId: string; color: Exclude<CardColor, 'wild'>; source: CardType }
+  | { type: 'direction_changed'; playerId: string; direction: 1 | -1; source: 'reverse' }
+  | {
+      type: 'plus_four_response_required';
+      targetPlayerId: string;
+      challengedPlayerId: string;
+      chooseColor: Exclude<CardColor, 'wild'>;
+      options: PlusFourResponseOption[];
+    }
+  | { type: 'plus_four_challenge_result'; success: boolean; drawPlayerId: string; drawCount: number }
+  | { type: 'player_called_u'; playerId: string }
+  | { type: 'missed_call_window_opened'; targetPlayerId: string; closesAfterPlayerId: string }
+  | { type: 'missed_call_caught'; catcherId: string; targetPlayerId: string; penaltyCards: number }
+  | { type: 'missed_call_window_closed'; targetPlayerId: string }
+  | { type: 'game_over'; winnerId: string; rankings: Ranking[]; coinDeltas: CoinDelta[] };
+```
+
+`GameEventMapper` 在应用层把 `DomainEvent` 转成 WebSocket 消息和客户端动画事件。
+
 ## 3. 模块拆分
 
 ### 3.1 GameEngine
@@ -111,6 +245,12 @@ class GameEngine {
   handleTimeout(state: GameState, playerId: string): GameResult {}
 }
 ```
+
+要求：
+
+- `GameEngine` 不处理用户 token、房间锁、Redis、数据库、WebSocket。
+- `GameEngine` 不读取当前时间；倒计时和超时由应用层传入明确参数。
+- 所有随机结果由 `DeckResolver` 或受控随机源生成，并进入状态或事件，便于测试和复盘。
 
 ### 3.2 RuleValidator
 
@@ -137,6 +277,45 @@ class GameEngine {
 - +4。
 - 特殊牌。
 - 忘喊 U 罚牌。
+
+`EffectResolver` 不直接写每一种牌的巨大 `if/else`，而是通过 handler 注册表查找对应处理器。
+
+```ts
+type CardEffectHandler = {
+  type: CardType;
+  canPlay(ctx: RuleContext, card: Card): boolean;
+  resolve(ctx: RuleContext, card: Card): EffectResult;
+  getAiHints?(ctx: RuleContext, card: Card): AiHint;
+};
+
+type EffectResult = {
+  statePatch: Partial<GameState>;
+  events: DomainEvent[];
+  nextTurnPolicy?: NextTurnPolicy;
+};
+```
+
+首版注册：
+
+```text
+number
+skip
+reverse
+plus_two
+wild_color
+wild_plus_four
+same_color_dump
+balloon
+swap_hand
+color_lock
+```
+
+扩展要求：
+
+- 新增功能牌时只新增 handler、测试用例和资源映射。
+- handler 可以读取 `RuleConfig`，但不能读取数据库或客户端状态。
+- handler 不负责广播和动画，只返回 `DomainEvent`。
+- `getAiHints` 只提供 AI 评分辅助，不直接替 AI 做决策。
 
 ### 3.4 TurnResolver
 
@@ -174,14 +353,16 @@ class GameEngine {
 收到 play_card
   -> 校验房间和玩家
   -> 读取 GameState
+  -> 应用层调用 GameEngine.playCards
   -> RuleValidator 校验 cardIds
   -> 从玩家手牌移除卡牌
   -> 加入弃牌堆
-  -> EffectResolver 结算效果
+  -> EffectResolver 通过 handler 结算效果
   -> ScoreResolver 检查胜负
   -> TurnResolver 切换回合
+  -> GameEngine 返回 GameResult
   -> 写回 Redis
-  -> 广播状态和动画事件
+  -> GameEventMapper 映射广播和动画事件
 ```
 
 ## 5. 出牌合法性

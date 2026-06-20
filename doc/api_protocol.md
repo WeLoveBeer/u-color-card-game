@@ -11,6 +11,103 @@
 - 所有请求都带业务 token。
 - 所有服务端响应都使用统一错误码。
 - 对局状态只给玩家下发自己可见的信息，不能泄露其他玩家手牌。
+- 协议类型必须集中维护，客户端和服务端不得在业务代码里散写消息字符串。
+
+### 1.1 共享协议类型
+
+建议建立共享协议目录：
+
+```text
+shared/protocol/
+  http.ts
+  ws-client-events.ts
+  ws-server-events.ts
+  errors.ts
+  room-config.ts
+  game-state.ts
+```
+
+如果首版暂不做 monorepo shared 包，也必须保持以下两个文件同步：
+
+```text
+client/assets/scripts/net/Protocol.ts
+server/src/common/protocol/
+```
+
+约束：
+
+- `play_card`、`draw_card`、`respond_plus_four`、`missed_call_caught` 等消息类型只能在协议文件里声明一次。
+- `ErrorCode` 使用枚举或 string union，不能在控制器、场景脚本、网关里手写字面量。
+- HTTP DTO、WebSocket DTO、客户端 store 类型尽量从协议类型派生。
+- 协议字段只表达跨端数据契约，不放服务端内部字段和 UI 私有字段。
+
+建议类型骨架：
+
+```ts
+type WsClientMessage =
+  | JoinRoomMessage
+  | LeaveRoomMessage
+  | ReadyMessage
+  | StartGameMessage
+  | PlayCardMessage
+  | DrawCardMessage
+  | PassTurnMessage
+  | RespondPlusFourMessage
+  | CallUMessage
+  | CatchMissedCallMessage
+  | ReconnectMessage;
+
+type WsServerMessage =
+  | RoomStateMessage
+  | GameStartMessage
+  | GameStateMessage
+  | CardPlayedMessage
+  | CardDrawnMessage
+  | ColorChangedMessage
+  | DirectionChangedMessage
+  | PlusFourResponseRequiredMessage
+  | PlusFourChallengeResultMessage
+  | TurnChangedMessage
+  | GameOverMessage
+  | PlayerCalledUMessage
+  | MissedCallWindowOpenedMessage
+  | MissedCallCaughtMessage
+  | MissedCallWindowClosedMessage
+  | PlayerOfflineMessage
+  | PlayerAutoPlayStartedMessage
+  | PlayerReconnectedMessage
+  | ErrorMessage;
+```
+
+服务端的 `GameEventMapper` 负责把规则引擎返回的 `DomainEvent` 映射为 `WsServerMessage`。
+
+### 1.2 领域事件映射
+
+领域层只返回 `DomainEvent`，应用层通过 `GameEventMapper` 转成 WebSocket 消息，客户端再交给 `GameAnimationOrchestrator` 播放动画。
+
+| DomainEvent | WsServerMessage | 客户端处理 |
+| --- | --- | --- |
+| `card_played` | `card_played` | 更新弃牌堆，播放打牌飞行动画 |
+| `card_drawn` | `card_drawn` | 更新手牌数量，播放摸牌动画 |
+| `turn_changed` | `turn_changed` | 更新当前玩家、高亮座位、刷新倒计时 |
+| `effect_resolved` with `skip` | `card_played.effects[]` | 播放禁行标记、下家变灰、跳过提示 |
+| `direction_changed` | `direction_changed` | 播放方向箭头反转动画 |
+| `effect_resolved` with `plus_two` | `card_played.effects[]` + `card_drawn` | 播放 +2 爆发和强制摸牌动画 |
+| `effect_resolved` with `same_color_dump` | `card_played.effects[]` | 播放同色全出动画，批量更新弃牌堆公开牌 |
+| `color_changed` | `color_changed` | 方向圈切换颜色，播放颜色人声 |
+| `plus_four_response_required` | `plus_four_response_required` | 弹出质疑 / 摸牌 / 叠加选项 |
+| `plus_four_challenge_result` | `plus_four_challenge_result` | 播放质疑成功或失败、摸牌动画 |
+| `player_called_u` | `player_called_u` | 头像旁显示 “U!” 气泡 |
+| `missed_call_window_opened` | `missed_call_window_opened` | 目标头像闪烁，允许其他玩家抓忘喊 |
+| `missed_call_caught` | `missed_call_caught` + `card_drawn` | 头像爆炸，罚牌飞行动画 |
+| `missed_call_window_closed` | `missed_call_window_closed` | 停止头像闪烁 |
+| `game_over` | `game_over` | 切换结算页 |
+
+说明：
+
+- `card_played.effects[]` 用于附带本次出牌触发的公开效果，方便客户端按一条出牌事件组织动画。
+- 独立状态变化，如 `color_changed`、`plus_four_response_required`、`missed_call_window_opened`，必须保留独立消息，避免客户端只能从文案或动画猜状态。
+- 如果一个领域事件需要同时产生多个 WebSocket 消息，顺序由 `GameEventMapper` 固定，客户端按收到顺序进入动画队列。
 
 ## 2. 环境地址
 
@@ -138,7 +235,7 @@ GET /api/users/me
     "nickname": "玩家",
     "avatar": "",
     "coin": 1200,
-    "selectedCardBack": "default"
+    "selectedCardBackId": "default"
   }
 }
 ```
@@ -353,6 +450,13 @@ POST /api/rewards/ad
 wss://game.example.com/ws?token=<token>
 ```
 
+消息路由要求：
+
+- 客户端使用 `MessageRouter` 根据 `type` 分发到 `RoomStore`、`GameStore`、`GameAnimationOrchestrator`。
+- 服务端 WebSocket Gateway 只做鉴权、解析、参数校验和调用 application service。
+- Gateway 不写规则判断，不直接改 Redis 状态。
+- 每条客户端消息都带 `seq`，服务端错误响应带回相同 `seq`。
+
 ## 7. WebSocket 客户端消息
 
 ### 7.1 加入房间
@@ -521,7 +625,7 @@ wss://game.example.com/ws?token=<token>
 
 ```json
 {
-  "seq": 10,
+  "seq": 11,
   "type": "call_u",
   "data": {
     "roomId": "839201"
@@ -541,7 +645,7 @@ wss://game.example.com/ws?token=<token>
 
 ```json
 {
-  "seq": 11,
+  "seq": 12,
   "type": "catch_missed_call",
   "data": {
     "roomId": "839201",
@@ -560,7 +664,7 @@ wss://game.example.com/ws?token=<token>
 
 ```json
 {
-  "seq": 12,
+  "seq": 13,
   "type": "reconnect",
   "data": {
     "roomId": "839201",
@@ -680,7 +784,55 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.5 摸牌广播
+说明：
+
+- `publicCards` 是本次进入弃牌堆且所有玩家可见的牌。
+- 标准单张出牌时 `publicCards` 只有 1 张。
+- 同色全出时，`publicCards` 包含同色全出牌和服务端自动带出的同色牌；自动带出的功能牌不触发自身效果。
+- `effects` 只描述公开效果，客户端不能据此自行结算状态，仍以 `state` 或后续 `game_state` 为准。
+
+### 8.5 颜色变化
+
+```json
+{
+  "type": "color_changed",
+  "data": {
+    "roomId": "839201",
+    "color": "blue",
+    "source": "wild_color",
+    "playerId": "u_1",
+    "state": {}
+  }
+}
+```
+
+客户端表现：
+
+- 中央方向圈切换到新颜色。
+- 播放对应颜色人声，例如 `voice_color_blue.wav`。
+- 不额外显示独立颜色条。
+
+### 8.6 方向变化
+
+```json
+{
+  "type": "direction_changed",
+  "data": {
+    "roomId": "839201",
+    "direction": -1,
+    "source": "reverse",
+    "playerId": "u_1",
+    "state": {}
+  }
+}
+```
+
+客户端表现：
+
+- 中央方向圈按新方向旋转。
+- 玩家座位高亮顺序按新方向闪烁。
+
+### 8.7 摸牌广播
 
 ```json
 {
@@ -694,7 +846,11 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.6 强制摸四待响应
+说明：
+
+- `drawReason` 使用 `DrawReason` 枚举，和规则引擎 `DomainEvent.card_drawn.drawReason` 保持同名。
+
+### 8.8 强制摸四待响应
 
 ```json
 {
@@ -710,7 +866,12 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.7 强制摸四质疑结果
+说明：
+
+- `targetPlayerId`、`challengedPlayerId`、`chooseColor`、`options` 来自规则领域事件。
+- `turnDeadline` 由应用层根据房间倒计时补充，规则引擎本身不读取当前时间。
+
+### 8.9 强制摸四质疑结果
 
 质疑成功：
 
@@ -744,7 +905,7 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.8 回合切换
+### 8.10 回合切换
 
 ```json
 {
@@ -757,7 +918,7 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.9 游戏结束
+### 8.11 游戏结束
 
 ```json
 {
@@ -797,7 +958,7 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
-### 8.10 喊 U 事件
+### 8.12 喊 U 事件
 
 ```json
 {
@@ -812,14 +973,14 @@ wss://game.example.com/ws?token=<token>
 
 - 在该玩家头像旁显示短暂气泡：“U！”。
 
-### 8.11 忘喊 U 可抓
+### 8.13 忘喊 U 可抓
 
 ```json
 {
   "type": "missed_call_window_opened",
   "data": {
     "targetPlayerId": "u_10001",
-    "expiresAfterPlayerAction": "u_10002"
+    "closesAfterPlayerId": "u_10002"
   }
 }
 ```
@@ -829,7 +990,7 @@ wss://game.example.com/ws?token=<token>
 - 目标玩家头像外圈橙红色闪烁。
 - 其他玩家可点击该头像抓忘喊。
 
-### 8.12 抓忘喊结果
+### 8.14 抓忘喊结果
 
 抓人成功：
 

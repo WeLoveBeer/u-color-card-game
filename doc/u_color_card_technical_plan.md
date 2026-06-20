@@ -40,9 +40,30 @@
 - 客户端只负责展示和发送操作。
 - 服务端负责洗牌、发牌、规则校验、胜负判断。
 - 规则引擎必须配置化和可扩展，不能把标准规则写死在流程里。
+- 代码按领域层、应用层、基础设施层拆分。领域层不能依赖网络、数据库、Cocos、NestJS 或微信 SDK。
 - 好友房对局状态放 Redis。
 - 用户、广告奖励、对局记录放 PostgreSQL。
 - 广告不能影响好友房公平胜负。
+- 微信小游戏首版必须优先控制主包体积，非首屏资源尽量分包或远程加载。
+- 首发服务器按 2 核 2G 预算设计，服务端保持单体轻量架构，避免首版引入重后台和复杂微服务。
+
+分层边界：
+
+```text
+领域层 domain
+  - 纯规则、纯数据、纯算法
+  - 可被服务端、人机原型、AI、单元测试复用
+  - 不访问 Redis/PostgreSQL/WebSocket/UI
+
+应用层 application
+  - 编排一次业务用例
+  - 负责加锁、读写状态、调用领域层、产生事件、记录日志
+  - 不直接写 UI，也不把规则写进控制器
+
+基础设施层 infrastructure
+  - HTTP、WebSocket、Redis、PostgreSQL、微信 SDK、资源加载、音频播放
+  - 只实现接口适配，不承载核心规则
+```
 
 ## 2. 客户端 Plan
 
@@ -64,20 +85,38 @@ client/
       Game.scene
       Result.scene
     scripts/
+      app/
+        AppBootstrap.ts
+        SceneRouter.ts
       core/
         EventBus.ts
         GameConfig.ts
+        Clock.ts
+        Storage.ts
+      assets/
         AudioManager.ts
         AssetManager.ts
+        AssetCatalog.ts
+        AudioCatalog.ts
+        SkinResolver.ts
       net/
         ApiClient.ts
         WsClient.ts
         Protocol.ts
+        MessageRouter.ts
       model/
         User.ts
         Room.ts
         GameState.ts
         Card.ts
+      state/
+        UserStore.ts
+        RoomStore.ts
+        GameStore.ts
+      domain/
+        CardTypes.ts
+        RuleConfig.ts
+        ClientPlayableCardService.ts
       lobby/
         LobbyView.ts
         ModeSelectView.ts
@@ -85,11 +124,15 @@ client/
         RoomView.ts
         CreateRoomView.ts
       game/
-        GameController.ts
-        CardView.ts
-        HandCardView.ts
-        PlayerSeatView.ts
-        DiscardPileView.ts
+        GameSceneController.ts
+        GameInteractionController.ts
+        GameAnimationOrchestrator.ts
+        views/
+          CardView.ts
+          HandCardView.ts
+          PlayerSeatView.ts
+          DiscardPileView.ts
+          DirectionRingView.ts
     textures/
     audio/
     prefabs/
@@ -114,11 +157,34 @@ WsClient：
 - 自动重连。
 - 重连后自动请求恢复未结束房间。
 
-GameController：
+GameSceneController：
 
-- 根据服务端状态刷新 UI。
-- 控制手牌、弃牌堆、当前颜色、倒计时。
-- 禁止客户端自行修改游戏结果。
+- 管理 Game 场景生命周期。
+- 订阅 `GameStore` 和网络事件。
+- 协调交互、动画和视图刷新。
+
+GameInteractionController：
+
+- 处理点击、拖动、摸牌、喊 U、抓忘喊、颜色选择等输入。
+- 只提交玩家意图，不修改牌局结果。
+- 与横向滑动、拖拽投放、二次点击确认等 UI 手势解耦。
+
+GameAnimationOrchestrator：
+
+- 把服务端事件转换为动画队列。
+- 保证打牌、功能牌、摸牌、回合切换按顺序播放。
+- 动画播放不改变领域状态，只消费 `GameStore` 的最新状态和事件。
+
+GameStore：
+
+- 保存服务端下发的房间和对局状态镜像。
+- 不自行生成牌、不自行结算胜负。
+- 可派生只影响 UI 的状态，例如可出牌高亮、倒计时剩余秒数。
+
+ClientPlayableCardService：
+
+- 只用于客户端高亮可出牌和轻提示。
+- 结果仅供 UI 展示，最终合法性仍以服务端规则引擎为准。
 
 AudioManager：
 
@@ -130,6 +196,17 @@ AssetManager：
 - 管理主包资源。
 - 管理分包资源。
 - 管理远程 CDN 资源。
+
+AssetCatalog / AudioCatalog：
+
+- 维护 `assetKey -> file path` 的资源映射。
+- 资源引用禁止在业务脚本里散写路径。
+- 人声音效、功能牌效果、牌背、头像、桌面皮肤都通过 catalog 取用。
+
+SkinResolver：
+
+- 根据玩家当前外观选择，解析牌背、头像框、桌面皮肤、语音包。
+- 对局规则只读取外观 ID，不依赖资源路径。
 
 ### 2.4 客户端状态模型
 
@@ -188,6 +265,15 @@ type GameState = {
 - room 分包：好友房创建、等待页、房间资源。
 - CDN：背景音乐、大图、可选皮肤、活动资源。
 
+包体控制要求：
+
+- 主包只保留首屏必需资源，目标尽量控制在 2MB 内。
+- 卡牌、牌桌、头像、功能牌音效、动画效果进入 game 分包。
+- BGM、大图、可选牌背、商城皮肤、活动资源优先放 CDN 或远程下载缓存。
+- 正式包音频优先使用压缩格式，WAV 只保留源文件或开发占位，不直接进入正式主包。
+- 大量小 SVG 上线前评估渲染和加载开销，必要时合并为 atlas 或转 WebP/PNG atlas。
+- 首版默认资源够用即可，不预装大量皮肤、头像和语音包。
+
 ## 3. 服务端 Plan
 
 ### 3.1 技术栈
@@ -218,18 +304,64 @@ server/
         room.gateway.ts
         room.service.ts
         room.types.ts
+      realtime/
+        realtime.gateway.ts
+        realtime.service.ts
       game/
-        game.engine.ts
-        game.rules.ts
-        game.shuffle.ts
-        game.types.ts
+        domain/
+          model/
+            card.types.ts
+            game-state.types.ts
+            rule-config.types.ts
+          rules/
+            rule-validator.ts
+          effects/
+            effect-resolver.ts
+            effect-handler.registry.ts
+            handlers/
+              skip.handler.ts
+              reverse.handler.ts
+              plus-two.handler.ts
+              wild-color.handler.ts
+              wild-plus-four.handler.ts
+              same-color-dump.handler.ts
+              balloon.handler.ts
+              swap-hand.handler.ts
+              color-lock.handler.ts
+          turn/
+            turn-resolver.ts
+          deck/
+            deck-resolver.ts
+            shuffle.service.ts
+          scoring/
+            score-resolver.ts
+          ai/
+            ai-action-generator.ts
+            ai-scorer.ts
+          game-engine.ts
+        application/
+          game-command.service.ts
+          game-query.service.ts
+          game-event-mapper.ts
+        infrastructure/
+          game-state.repository.ts
+          game-record.repository.ts
+          room-lock.ts
       reward/
         reward.controller.ts
         reward.service.ts
       config/
         config.controller.ts
         config.service.ts
+      asset/
+        asset-catalog.service.ts
+        cosmetic.service.ts
     common/
+      protocol/
+        http.ts
+        ws-client-events.ts
+        ws-server-events.ts
+        errors.ts
       guards/
       filters/
       utils/
@@ -271,15 +403,20 @@ RoomService：
 
 GameEngine：
 
-- 创建牌堆。
-- 服务端随机洗牌。
-- 发起手牌。
-- 校验出牌。
-- 处理摸牌。
-- 处理功能牌。
-- 处理断线托管行动。
-- 判断胜负。
-- 生成结算。
+- 位于 `game/domain`，是纯领域入口。
+- 创建牌堆、发牌、校验出牌、处理摸牌、结算功能牌、判断胜负。
+- 不读写 Redis/PostgreSQL，不广播 WebSocket，不依赖 NestJS。
+
+GameCommandService：
+
+- 位于 `game/application`。
+- 编排 `play_card`、`draw_card`、`call_u`、`catch_missed_call`、`respond_plus_four`、`handle_timeout` 等命令。
+- 负责房间锁、读取状态、调用 `GameEngine`、写回状态、记录操作日志、产出广播事件。
+
+GameEventMapper：
+
+- 把领域结果映射为 WebSocket 事件和动画事件。
+- 防止领域层直接知道客户端表现细节。
 
 RewardService：
 
@@ -311,6 +448,12 @@ ConfigService：
 - 特殊牌配置。
 - 房间默认规则配置。
 
+Asset / Cosmetic 服务：
+
+- 维护所有可用外观和资源定义。
+- 商城、广告限时体验、任务奖励只发放 `cosmeticId`。
+- 对局过程只读取玩家选中的外观 ID，不让外观系统影响规则公平性。
+
 ### 3.4 API 与 WebSocket
 
 接口字段、消息格式、错误码、重连消息和强制摸四/喊 U/抓忘喊事件统一维护在 `doc/api_protocol.md`。
@@ -330,11 +473,25 @@ ConfigService：
 
 - 服务端实现按 `GameEngine`、`RuleValidator`、`EffectResolver`、`TurnResolver`、`DeckResolver`、`ScoreResolver` 拆分。
 - 特殊牌使用 handler 注册，不把所有效果写进一个巨大条件分支。
+- 每个 handler 只处理自己的 `CardType`，并通过统一 `EffectResult` 返回状态变更和领域事件。
 - 房间创建时保存完整规则配置，对局记录保存规则快照。
 - AI 决策必须读取当前 `RuleConfig`，不能假设永远是标准规则。
 - 每个新规则和新特殊牌必须补服务端单元测试。
 
-## 5. 数据与重连落地
+## 5. 测试与质量保障落地
+
+完整测试分层、生成代码验收流程、CI 门禁和上线前验收统一维护在 `doc/testing_plan.md`。
+
+落地要求：
+
+- 规则、AI、协议和对局状态变更不能只靠人工检查，必须补自动化测试或可复现验收记录。
+- 领域层测试必须脱离 NestJS、Redis、PostgreSQL、WebSocket、Cocos 和微信 SDK。
+- 服务端接口测试必须能完整跑完一局牌局。
+- 随机对局模拟失败时必须输出 seed、规则配置和操作序列，便于复现。
+- 对局记录和操作日志必须支持内部问题复盘。
+- 体验版上线前必须完成真机登录、分享、好友房、广告和断线重连验证。
+
+## 6. 数据与重连落地
 
 PostgreSQL 表、Redis Key、TTL、索引和清理策略统一维护在 `doc/data_model.md`，本 Plan 不再复制字段清单。
 
@@ -346,7 +503,7 @@ PostgreSQL 表、Redis Key、TTL、索引和清理策略统一维护在 `doc/dat
 - 所有对局操作使用房间锁，避免并发出牌、摸牌和结算覆盖状态。
 - 结算记录保存规则快照和随机种子 hash，便于争议排查。
 
-## 6. 微信后台配置
+## 7. 微信后台配置
 
 小游戏后台需要配置合法域名。
 
@@ -381,9 +538,9 @@ uploadFile 合法域名：
 - 域名需要备案。
 - 测试环境和正式环境最好分开。
 
-## 7. 部署 Plan
+## 8. 部署 Plan
 
-### 7.1 服务器组件
+### 8.1 服务器组件
 
 ```text
 Nginx
@@ -394,7 +551,15 @@ PostgreSQL
 
 建议用 Docker Compose 管理。
 
-### 7.2 域名规划
+首发服务器预算：
+
+- 默认按 2 核 2G 单机部署设计。
+- 服务端保持单体 NestJS 应用，不拆微服务。
+- Node 进程先跑 1 个实例，不默认开启 cluster。
+- Redis、PostgreSQL 如同机部署，必须设置内存和连接数上限。
+- 日志使用滚动文件或 stdout 采集，禁止无限写磁盘。
+
+### 8.2 域名规划
 
 ```text
 api.yourdomain.com   -> HTTP API
@@ -402,7 +567,7 @@ game.yourdomain.com  -> WebSocket
 cdn.yourdomain.com   -> 静态资源
 ```
 
-### 7.3 Nginx WebSocket 配置要点
+### 8.3 Nginx WebSocket 配置要点
 
 ```nginx
 location /ws {
@@ -414,7 +579,7 @@ location /ws {
 }
 ```
 
-### 7.4 环境区分
+### 8.4 环境区分
 
 ```text
 dev：本地开发
@@ -441,14 +606,26 @@ const CONFIG = {
 };
 ```
 
-## 8. 开发里程碑
+### 8.5 低配服务器运行约束
 
-### 8.1 M1：客户端人机原型
+2 核 2G 环境下优先保证稳定：
+
+- Redis 设置 `maxmemory`，房间和对局状态必须有 TTL，对局结束立即清理。
+- PostgreSQL 调低连接数和内存参数，避免空闲连接吃满内存。
+- `game_actions` 异步批量写入，避免每步操作同步阻塞对局。
+- AI 不做深搜索，普通决策控制在 50ms 左右，托管走快速路径。
+- 限制单机同时房间数和 WebSocket 连接数，超过阈值返回服务器繁忙或引导稍后重试。
+- 不在服务端内存长期缓存完整历史对局；复盘依赖 seed hash 和必要操作日志。
+- 首版不上复杂商城、在线匹配、复杂活动后台和大规模运营统计。
+
+## 9. 开发里程碑
+
+### 9.1 M1：客户端人机原型
 
 - Cocos 工程初始化。
 - 首页大厅。
 - 人机模式入口。
-- 本地规则引擎。
+- 可复用的纯 TypeScript 领域规则包。
 - 本地 AI。
 - 基础卡牌 UI。
 - 基础音效。
@@ -457,7 +634,7 @@ const CONFIG = {
 
 - 不连接服务端也能完整打一局人机。
 
-### 8.2 M2：服务端规则引擎
+### 9.2 M2：服务端规则引擎
 
 - NestJS 项目初始化。
 - PostgreSQL 和 Redis 接入。
@@ -471,7 +648,7 @@ const CONFIG = {
 
 - 通过接口测试可完整跑完一局服务端牌局。
 
-### 8.3 M3：好友房
+### 9.3 M3：好友房
 
 - 创建房间 API。
 - WebSocket 连接。
@@ -486,7 +663,7 @@ const CONFIG = {
 
 - 两台手机可通过微信分享进入同一房间并完整结算。
 
-### 8.4 M4：微信能力与广告
+### 9.4 M4：微信能力与广告
 
 - `wx.login` 接入。
 - 微信分享房间。
@@ -499,7 +676,7 @@ const CONFIG = {
 
 - 体验版中可登录、分享、看广告领奖励。
 
-### 8.5 M5：上线前打磨
+### 9.5 M5：上线前打磨
 
 - 包体优化。
 - 分包加载。
@@ -516,7 +693,7 @@ const CONFIG = {
 - 好友房断线可恢复。
 - 广告不影响公平对局。
 
-## 9. 风险与默认决策
+## 10. 风险与默认决策
 
 风险：
 
@@ -524,6 +701,8 @@ const CONFIG = {
 - 好友房需要稳定 WebSocket，云函数不适合做实时对局。
 - 客户端不能承担规则裁决，否则容易作弊。
 - 广告如果影响好友房胜负，会破坏“不控牌”的核心卖点。
+- 主包过大或资源文件过多会影响微信小游戏首屏加载和审核体验。
+- 2 核 2G 单机资源有限，同时跑 Node、Redis、PostgreSQL 时需要严格限流和清理。
 
 默认决策：
 
@@ -532,3 +711,5 @@ const CONFIG = {
 - 首版好友房对局内不出现影响胜负的广告。
 - 首版 UI 资源可用原型资源，正式上线前再精修。
 - 首版数据库使用 PostgreSQL；如果团队更熟悉 MySQL，也可等价替换。
+- 首版不预置大量皮肤和 BGM，大资源优先分包或 CDN。
+- 首版服务端不做微服务，不做复杂后台；先保证单体实时房间稳定运行。
