@@ -22,6 +22,7 @@ export * from './net/Protocol.js';
 export * from './net/WsClient.js';
 export * from './room/CreateRoomView.js';
 export * from './room/RoomView.js';
+export * from './rules/RulesView.js';
 export * from './state/GameStore.js';
 export * from './state/RoomStore.js';
 export * from './state/UserStore.js';
