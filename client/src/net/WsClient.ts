@@ -15,10 +15,12 @@ export class WsClient {
   private socket: SocketLike | null = null;
   private seq = 1;
   private readonly listeners = new Set<(message: WsServerMessage) => void>();
+  private lastToken: string | null = null;
 
   constructor(private readonly wsBase: string, private readonly socketFactory: SocketFactory) {}
 
   connect(token: string): void {
+    this.lastToken = token;
     this.socket = this.socketFactory(`${this.wsBase}?token=${encodeURIComponent(token)}`);
     this.socket.onmessage = (event) => {
       const message = JSON.parse(event.data) as WsServerMessage;
@@ -26,6 +28,16 @@ export class WsClient {
         listener(message);
       }
     };
+  }
+
+  reconnect(roomId?: string, lastSeq?: number): number | null {
+    if (!this.lastToken) {
+      return null;
+    }
+    if (!this.socket) {
+      this.connect(this.lastToken);
+    }
+    return this.send({ type: 'reconnect', data: { roomId, lastSeq } });
   }
 
   onMessage(listener: (message: WsServerMessage) => void): () => void {

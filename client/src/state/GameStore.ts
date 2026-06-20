@@ -9,6 +9,18 @@ export class GameStore {
     this.stateValue = state;
   }
 
+  markPlayerOffline(playerId: PlayerId, autoPlayAt: number): void {
+    this.patchPlayer(playerId, { online: false, autoPlayAt, disconnectAt: Date.now() });
+  }
+
+  markPlayerAutoPlaying(playerId: PlayerId): void {
+    this.patchPlayer(playerId, { isAutoPlaying: true });
+  }
+
+  markPlayerReconnected(playerId: PlayerId): void {
+    this.patchPlayer(playerId, { online: true, isAutoPlaying: false, disconnectAt: null, autoPlayAt: null });
+  }
+
   clear(): void {
     this.stateValue = null;
   }
@@ -30,5 +42,15 @@ export class GameStore {
       return [];
     }
     return this.playable.getPlayableCards(this.stateValue).map((card) => card.id);
+  }
+
+  private patchPlayer(playerId: PlayerId, patch: Partial<VisibleGameState['players'][number]>): void {
+    if (!this.stateValue) {
+      return;
+    }
+    this.stateValue = {
+      ...this.stateValue,
+      players: this.stateValue.players.map((player) => (player.id === playerId ? { ...player, ...patch } : player))
+    };
   }
 }
