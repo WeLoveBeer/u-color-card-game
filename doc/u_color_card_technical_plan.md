@@ -234,7 +234,23 @@ type GameState = {
 
 ### 2.5 微信小游戏配置
 
-`game.json` 建议：
+当前首版预览阶段先不要启用分包配置，避免微信开发者工具校验 `subpackages[].root` 时发现目录不存在而导致自动预览失败。
+
+当前 `game.json`：
+
+```json
+{
+  "deviceOrientation": "portrait",
+  "networkTimeout": {
+    "request": 10000,
+    "connectSocket": 10000,
+    "uploadFile": 10000,
+    "downloadFile": 10000
+  }
+}
+```
+
+后续真正拆出 `client/subpackages/game` 和 `client/subpackages/room` 目录后，再启用分包配置：
 
 ```json
 {
