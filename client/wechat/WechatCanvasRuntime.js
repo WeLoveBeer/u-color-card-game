@@ -1,4 +1,5 @@
 import { WechatCanvasRenderDriver } from './WechatCanvasRenderDriver.js';
+import { LocalDemoGame } from './LocalDemoGame.js';
 
 const COLORS = {
   navy: '#061b36',
@@ -47,6 +48,7 @@ export class WechatCanvasRuntime {
     this.handRects = [];
     this.game = null;
     this.aiTimer = null;
+    this.localDemo = new LocalDemoGame();
   }
 
   async start() {
@@ -236,39 +238,7 @@ export class WechatCanvasRuntime {
   }
 
   startLocalGame() {
-    const deck = this.createDeck();
-    this.shuffle(deck);
-    const players = [
-      { id: 'me', name: '我', coin: 56, hand: [] },
-      { id: 'ai_1', name: '小明', coin: 35, hand: [] },
-      { id: 'ai_2', name: '思思', coin: 42, hand: [] },
-      { id: 'ai_3', name: '阿强', coin: 28, hand: [] }
-    ];
-    for (let i = 0; i < 7; i += 1) {
-      for (const player of players) {
-        player.hand.push(deck.pop());
-      }
-    }
-    let discard = deck.pop();
-    while (discard.type !== 'number') {
-      deck.unshift(discard);
-      discard = deck.pop();
-    }
-    this.game = {
-      roomId: 'local',
-      deck,
-      players,
-      discard,
-      currentColor: discard.color,
-      currentIndex: 0,
-      direction: 1,
-      turnStartedAt: Date.now(),
-      turnSeconds: 30,
-      message: '轮到你出牌',
-      calledU: false,
-      finished: false,
-      drawChoice: null
-    };
+    this.game = this.localDemo.create();
     this.selectedCardId = null;
     this.clearAiTimer();
     this.scene = 'game';
@@ -276,28 +246,11 @@ export class WechatCanvasRuntime {
   }
 
   createDeck() {
-    const deck = [];
-    let seq = 1;
-    for (const color of ['red', 'yellow', 'blue', 'green']) {
-      for (let value = 0; value <= 9; value += 1) {
-        deck.push({ id: `c_${seq++}`, color, type: 'number', label: String(value) });
-      }
-      for (const type of ['skip', 'reverse', 'plus2']) {
-        deck.push({ id: `c_${seq++}`, color, type, label: type === 'skip' ? '禁' : type === 'reverse' ? '↻' : '+2' });
-      }
-    }
-    for (let i = 0; i < 4; i += 1) {
-      deck.push({ id: `c_${seq++}`, color: 'wild', type: 'wild', label: '◎' });
-      deck.push({ id: `c_${seq++}`, color: 'wild', type: 'plus4', label: '+4' });
-    }
-    return deck;
+    return this.localDemo.createDeck();
   }
 
   shuffle(items) {
-    for (let i = items.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [items[i], items[j]] = [items[j], items[i]];
-    }
+    this.localDemo.shuffle(items);
   }
 
   tapCard(cardId) {
@@ -432,13 +385,7 @@ export class WechatCanvasRuntime {
   }
 
   drawTo(player, count) {
-    for (let i = 0; i < count; i += 1) {
-      if (this.game.deck.length === 0) {
-        this.game.deck = this.createDeck();
-        this.shuffle(this.game.deck);
-      }
-      player.hand.push(this.game.deck.pop());
-    }
+    this.localDemo.drawTo(this.game, player, count);
   }
 
   drawCard() {
@@ -475,36 +422,27 @@ export class WechatCanvasRuntime {
   }
 
   advanceTurn() {
-    const length = this.game.players.length;
-    this.game.currentIndex = (this.game.currentIndex + this.game.direction + length) % length;
-    this.game.turnStartedAt = Date.now();
+    this.localDemo.advanceTurn(this.game);
   }
 
   currentPlayer() {
-    return this.game.players[this.game.currentIndex];
+    return this.localDemo.currentPlayer(this.game);
   }
 
   me() {
-    return this.game.players[0];
+    return this.localDemo.me(this.game);
   }
 
   playableCards() {
-    return this.me().hand.filter((card) => this.isPlayable(card));
+    return this.localDemo.playableCards(this.game);
   }
 
   isPlayable(card) {
-    const top = this.game.discard;
-    return card.color === 'wild' || card.color === this.game.currentColor || card.label === top.label || card.type === top.type;
+    return this.localDemo.isPlayable(this.game, card);
   }
 
   recommendColor(hand) {
-    const counts = { red: 0, yellow: 0, blue: 0, green: 0 };
-    for (const card of hand) {
-      if (counts[card.color] !== undefined) {
-        counts[card.color] += 1;
-      }
-    }
-    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+    return this.localDemo.recommendColor(hand);
   }
 
   drawLobby() {
