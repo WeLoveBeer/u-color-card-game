@@ -16,41 +16,41 @@ export class TaskController {
   ) {}
 
   @Get()
-  list(@Headers('authorization') authorization?: string): ApiResponse<TaskListResponse> {
-    const userId = this.resolveUserId(authorization);
+  async list(@Headers('authorization') authorization?: string): Promise<ApiResponse<TaskListResponse>> {
+    const userId = await this.resolveUserId(authorization);
     if (!userId) {
       return { success: false, error: { code: 'UNAUTHORIZED', message: '未登录或 token 失效' } };
     }
     return {
       success: true,
       data: {
-        items: this.tasks.listTasks(userId),
+        items: await this.tasks.listTasks(userId),
         updatedAt: new Date().toISOString()
       }
     };
   }
 
   @Post('claim')
-  claim(
+  async claim(
     @Body() body: ClaimTaskRewardRequest,
     @Headers('authorization') authorization?: string
-  ): ApiResponse<ClaimTaskRewardResponse> {
-    const userId = this.resolveUserId(authorization);
+  ): Promise<ApiResponse<ClaimTaskRewardResponse>> {
+    const userId = await this.resolveUserId(authorization);
     if (!userId) {
       return { success: false, error: { code: 'UNAUTHORIZED', message: '未登录或 token 失效' } };
     }
-    const task = this.tasks.listTasks(userId).find((item) => item.id === body.taskId);
+    const task = (await this.tasks.listTasks(userId)).find((item) => item.id === body.taskId);
     if (!task) {
       return { success: false, error: { code: 'INVALID_PARAMS', message: '任务不存在' } };
     }
     if (task.status !== 'claimable') {
       return { success: false, error: { code: 'INVALID_PARAMS', message: '任务暂不可领取' } };
     }
-    const user = this.auth.addCoin(userId, task.coinReward);
+    const user = await this.auth.addCoin(userId, task.coinReward);
     if (!user) {
       return { success: false, error: { code: 'UNAUTHORIZED', message: '未登录或 token 失效' } };
     }
-    this.tasks.markClaimed(userId, body.taskId);
+    await this.tasks.markClaimed(userId, body.taskId);
     return {
       success: true,
       data: {
@@ -62,7 +62,7 @@ export class TaskController {
     };
   }
 
-  private resolveUserId(authorization?: string): string | null {
+  private resolveUserId(authorization?: string): Promise<string | null> {
     return this.auth.resolveToken(authorization?.replace('Bearer ', ''));
   }
 }

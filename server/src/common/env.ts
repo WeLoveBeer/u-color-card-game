@@ -4,5 +4,8 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL ?? '',
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
   jwtSecret: process.env.JWT_SECRET ?? 'dev_secret',
+  wechatAppId: process.env.WECHAT_APP_ID ?? '',
+  wechatAppSecret: process.env.WECHAT_APP_SECRET ?? '',
+  authTokenTtlDays: Number(process.env.AUTH_TOKEN_TTL_DAYS ?? 14),
   wsPath: process.env.WS_PATH ?? '/ws'
 };

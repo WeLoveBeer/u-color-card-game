@@ -48,7 +48,7 @@ describe('任务与牌背接口流程', () => {
         });
       });
 
-    tasks.recordGameOver(user.userId, [
+    await tasks.recordGameOver(user.userId, [
       { playerId: user.userId, rank: 1, remainCardCount: 0, score: 0 },
       { playerId: 'ai_1', rank: 2, remainCardCount: 2, score: 20 }
     ]);

@@ -1,6 +1,7 @@
 import type { DomainEvent, GameState } from '@shared/domain/game-state.js';
 
 export type GameActionLog = {
+  gameId?: string;
   roomId: string;
   playerId: string;
   actionType: string;

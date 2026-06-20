@@ -9,11 +9,11 @@ class FakeAuthService {
     ['loser', { id: 'loser', nickname: '输家', avatar: '', coin: 30 }]
   ]);
 
-  getUser(userId: string): UserProfileDto | null {
+  async getUser(userId: string): Promise<UserProfileDto | null> {
     return this.users.get(userId) ?? null;
   }
 
-  addCoin(userId: string, coinDelta: number): UserProfileDto | null {
+  async addCoin(userId: string, coinDelta: number): Promise<UserProfileDto | null> {
     const user = this.users.get(userId);
     if (!user) {
       return null;
@@ -27,20 +27,20 @@ class FakeAuthService {
 class FakeTaskService {
   calls: Array<{ winnerId: string; rankings: Ranking[] }> = [];
 
-  recordGameOver(winnerId: string, rankings: Ranking[]): void {
+  async recordGameOver(winnerId: string, rankings: Ranking[]): Promise<void> {
     this.calls.push({ winnerId, rankings });
   }
 }
 
 describe('GameGateway 金币结算', () => {
-  it('game_over 事件会按真实余额落账并替换 coinDeltas', () => {
+  it('game_over 事件会按真实余额落账并替换 coinDeltas', async () => {
     const auth = new FakeAuthService();
     const tasks = new FakeTaskService();
     const gateway = new GameGateway(auth as never, {} as never, {} as never, {} as never, tasks as never) as unknown as {
-      settleGameOverEvents(events: unknown[]): Array<{ type: string; coinDeltas: Array<{ playerId: string; coinDelta: number; coinAfter: number }> }>;
+      settleGameOverEvents(events: unknown[]): Promise<Array<{ type: string; coinDeltas: Array<{ playerId: string; coinDelta: number; coinAfter: number }> }>>;
     };
 
-    const [event] = gateway.settleGameOverEvents([
+    const [event] = await gateway.settleGameOverEvents([
       {
         type: 'game_over',
         winnerId: 'winner',
@@ -58,8 +58,8 @@ describe('GameGateway 金币结算', () => {
       { playerId: 'loser', coinDelta: -30, coinAfter: 0 },
       { playerId: 'ai_1', coinDelta: -20, coinAfter: 0 }
     ]);
-    expect(auth.getUser('winner')?.coin).toBe(150);
-    expect(auth.getUser('loser')?.coin).toBe(0);
+    expect((await auth.getUser('winner'))?.coin).toBe(150);
+    expect((await auth.getUser('loser'))?.coin).toBe(0);
     expect(tasks.calls).toHaveLength(1);
     expect(tasks.calls[0]?.winnerId).toBe('winner');
   });

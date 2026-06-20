@@ -7,9 +7,9 @@ export class UserController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Get('me')
-  me(@Headers('authorization') authorization?: string): ApiResponse<UserProfileDto> {
-    const userId = this.auth.resolveToken(authorization?.replace('Bearer ', ''));
-    const user = userId ? this.auth.getUser(userId) : null;
+  async me(@Headers('authorization') authorization?: string): Promise<ApiResponse<UserProfileDto>> {
+    const userId = await this.auth.resolveToken(authorization?.replace('Bearer ', ''));
+    const user = userId ? await this.auth.getUser(userId) : null;
     return user
       ? { success: true, data: user }
       : { success: false, error: { code: 'UNAUTHORIZED', message: '未登录或 token 失效' } };

@@ -33,7 +33,7 @@ export class GameGateway {
 
   async handleConnection(socket: Socket): Promise<void> {
     const token = String(socket.handshake.query.token ?? '');
-    const userId = this.auth.resolveToken(token);
+    const userId = await this.auth.resolveToken(token);
     if (!userId) {
       socket.emit('message', this.error(undefined, 'UNAUTHORIZED', '未登录或 token 失效'));
       socket.disconnect(true);
@@ -50,7 +50,7 @@ export class GameGateway {
     }
 
     const autoPlayAt = Date.now() + this.autoPlayDelayMs;
-    const room = this.rooms.markOffline(roomId, userId, autoPlayAt);
+    const room = await this.rooms.markOffline(roomId, userId, autoPlayAt);
     await this.commands.markPlayerOffline(roomId, userId, autoPlayAt);
     this.socketRooms.delete(socket.id);
     if (!room) {
@@ -131,7 +131,7 @@ export class GameGateway {
   }
 
   private async joinRoom(socket: Socket, userId: string, message: Extract<WsClientMessage, { type: 'join_room' }>): Promise<void> {
-    const room = this.rooms.joinRoom(message.data.roomId, userId);
+    const room = await this.rooms.joinRoom(message.data.roomId, userId);
     if (!room) {
       socket.emit('message', this.error(message.seq, 'ROOM_NOT_FOUND', '房间不存在或已开始'));
       return;
@@ -148,7 +148,7 @@ export class GameGateway {
   }
 
   private async leaveRoom(socket: Socket, userId: string, message: Extract<WsClientMessage, { type: 'leave_room' }>): Promise<void> {
-    const room = this.rooms.leaveRoom(message.data.roomId, userId);
+    const room = await this.rooms.leaveRoom(message.data.roomId, userId);
     await socket.leave(message.data.roomId);
     socket.data.roomId = undefined;
     this.socketRooms.delete(socket.id);
@@ -176,7 +176,7 @@ export class GameGateway {
   }
 
   private async ready(socket: Socket, userId: string, message: Extract<WsClientMessage, { type: 'ready' }>): Promise<void> {
-    const room = this.rooms.setReady(message.data.roomId, userId, message.data.ready);
+    const room = await this.rooms.setReady(message.data.roomId, userId, message.data.ready);
     if (!room) {
       socket.emit('message', this.error(message.seq, 'NOT_IN_ROOM', '玩家不在房间中'));
       return;
@@ -190,7 +190,7 @@ export class GameGateway {
   }
 
   private async startGame(socket: Socket, userId: string, message: Extract<WsClientMessage, { type: 'start_game' }>): Promise<void> {
-    const room = this.rooms.getRoom(message.data.roomId);
+    const room = await this.rooms.getRoom(message.data.roomId);
     if (!room) {
       socket.emit('message', this.error(message.seq, 'ROOM_NOT_FOUND', '房间不存在或已结束'));
       return;
@@ -215,7 +215,7 @@ export class GameGateway {
       return;
     }
 
-    this.rooms.markPlaying(room.roomId);
+    await this.rooms.markPlaying(room.roomId);
     const state = await this.commands.startLocalGame(
       room.roomId,
       room.config,
@@ -236,7 +236,7 @@ export class GameGateway {
       socket.emit('message', this.error(seq, result.errorCode ?? 'SERVER_ERROR', '操作失败'));
       return;
     }
-    const settledEvents = this.settleGameOverEvents(events);
+    const settledEvents = await this.settleGameOverEvents(events);
     for (const socket of await this.server.in(roomId).fetchSockets()) {
       const socketUserId = socket.data.userId as string | undefined;
       if (!socketUserId) {
@@ -250,13 +250,13 @@ export class GameGateway {
   }
 
   private async reconnect(socket: Socket, userId: string, message: Extract<WsClientMessage, { type: 'reconnect' }>): Promise<void> {
-    const room = message.data.roomId ? this.rooms.getRoom(message.data.roomId) : this.rooms.findRoomByPlayer(userId);
+    const room = message.data.roomId ? await this.rooms.getRoom(message.data.roomId) : await this.rooms.findRoomByPlayer(userId);
     if (!room || !room.players.some((player) => player.id === userId)) {
       socket.emit('message', this.error(message.seq, 'ROOM_NOT_FOUND', '房间不存在或已结束'));
       return;
     }
 
-    this.rooms.markReconnected(room.roomId, userId);
+    await this.rooms.markReconnected(room.roomId, userId);
     const state = await this.commands.markPlayerReconnected(room.roomId, userId);
     await socket.join(room.roomId);
     socket.data.roomId = room.roomId;
@@ -267,7 +267,7 @@ export class GameGateway {
       seq: message.seq,
       type: 'room_state',
       serverTime: Date.now(),
-      data: this.rooms.getRoom(room.roomId)
+      data: await this.rooms.getRoom(room.roomId)
     });
     if (state) {
       socket.emit('message', {
@@ -321,7 +321,7 @@ export class GameGateway {
   }
 
   private async startAutoPlay(roomId: string, playerId: string): Promise<void> {
-    const room = this.rooms.markAutoPlaying(roomId, playerId);
+    const room = await this.rooms.markAutoPlaying(roomId, playerId);
     if (!room) {
       return;
     }
@@ -335,7 +335,7 @@ export class GameGateway {
     if (state?.currentPlayerId === playerId) {
       const { result, events } = await this.commands.runAutoPlay(roomId, playerId);
       if (result.ok) {
-        const settledEvents = this.settleGameOverEvents(events);
+        const settledEvents = await this.settleGameOverEvents(events);
         for (const socket of await this.server.in(roomId).fetchSockets()) {
           const socketUserId = socket.data.userId as string | undefined;
           if (!socketUserId) {
@@ -349,18 +349,21 @@ export class GameGateway {
     }
   }
 
-  private settleGameOverEvents(events: DomainEvent[]): DomainEvent[] {
-    return events.map((event) => {
+  private async settleGameOverEvents(events: DomainEvent[]): Promise<DomainEvent[]> {
+    const settled: DomainEvent[] = [];
+    for (const event of events) {
       if (event.type !== 'game_over') {
-        return event;
+        settled.push(event);
+        continue;
       }
-      this.tasks.recordGameOver(event.winnerId, event.rankings);
-      return { ...event, coinDeltas: this.settleCoinDeltas(event.winnerId, event.rankings) };
-    });
+      await this.tasks.recordGameOver(event.winnerId, event.rankings);
+      settled.push({ ...event, coinDeltas: await this.settleCoinDeltas(event.winnerId, event.rankings) });
+    }
+    return settled;
   }
 
-  private settleCoinDeltas(winnerId: string, rankings: Ranking[]): CoinDelta[] {
-    const winner = this.auth.getUser(winnerId);
+  private async settleCoinDeltas(winnerId: string, rankings: Ranking[]): Promise<CoinDelta[]> {
+    const winner = await this.auth.getUser(winnerId);
     let winnerGain = 0;
     const loserDeltas: CoinDelta[] = [];
 
@@ -368,10 +371,10 @@ export class GameGateway {
       if (ranking.playerId === winnerId) {
         continue;
       }
-      const user = this.auth.getUser(ranking.playerId);
+      const user = await this.auth.getUser(ranking.playerId);
       const loss = Math.min(ranking.score, user?.coin ?? ranking.score);
       winnerGain += loss;
-      const updated = user ? this.auth.addCoin(ranking.playerId, -loss) : null;
+      const updated = user ? await this.auth.addCoin(ranking.playerId, -loss) : null;
       loserDeltas.push({
         playerId: ranking.playerId,
         coinDelta: -loss,
@@ -379,7 +382,7 @@ export class GameGateway {
       });
     }
 
-    const updatedWinner = winner ? this.auth.addCoin(winnerId, winnerGain) : null;
+    const updatedWinner = winner ? await this.auth.addCoin(winnerId, winnerGain) : null;
     return [
       {
         playerId: winnerId,

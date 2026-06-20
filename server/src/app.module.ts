@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CommonModule } from './common/common.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ConfigModule } from './modules/config/config.module.js';
 import { CosmeticModule } from './modules/cosmetic/cosmetic.module.js';
@@ -11,6 +12,7 @@ import { UserModule } from './modules/user/user.module.js';
 
 @Module({
   imports: [
+    CommonModule,
     AuthModule,
     UserModule,
     ConfigModule,

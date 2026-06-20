@@ -7,10 +7,12 @@ export class LeaderboardController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Get('coins')
-  coins(@Query('limit') limitValue?: string, @Headers('authorization') authorization?: string): ApiResponse<CoinLeaderboardResponse> {
+  async coins(
+    @Query('limit') limitValue?: string,
+    @Headers('authorization') authorization?: string
+  ): Promise<ApiResponse<CoinLeaderboardResponse>> {
     const limit = this.limit(limitValue);
-    const ranked = this.auth
-      .listUsers()
+    const ranked = (await this.auth.listUsers())
       .sort((a, b) => b.coin - a.coin || a.id.localeCompare(b.id))
       .map((user, index) => ({
         rank: index + 1,
@@ -19,7 +21,7 @@ export class LeaderboardController {
         avatar: user.avatar,
         coin: user.coin
       }));
-    const userId = this.auth.resolveToken(authorization?.replace('Bearer ', ''));
+    const userId = await this.auth.resolveToken(authorization?.replace('Bearer ', ''));
     return {
       success: true,
       data: {

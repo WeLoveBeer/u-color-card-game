@@ -17,9 +17,51 @@ model User {
   updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz
   adRewards        AdReward[]
   dailyStats       UserDailyStat[]
+  sessions         AuthSession[]
+  taskClaims       UserTaskClaim[]
+  cardBacks        UserCardBack[]
 
   @@index([coin(sort: Desc), createdAt(sort: Asc)], map: "idx_users_coin_rank")
   @@map("users")
+}
+
+model AuthSession {
+  tokenHash String   @id @map("token_hash") @db.VarChar(128)
+  userId    String   @map("user_id") @db.VarChar(32)
+  openidHash String  @map("openid_hash") @db.VarChar(128)
+  sessionKeyHash String? @map("session_key_hash") @db.VarChar(128)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId], map: "idx_auth_sessions_user_id")
+  @@index([expiresAt], map: "idx_auth_sessions_expires_at")
+  @@map("auth_sessions")
+}
+
+model UserTaskClaim {
+  userId    String   @map("user_id") @db.VarChar(32)
+  taskId    String   @map("task_id") @db.VarChar(64)
+  claimDate DateTime @map("claim_date") @db.Date
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@id([userId, taskId, claimDate])
+  @@index([taskId, claimDate], map: "idx_user_task_claims_task_date")
+  @@map("user_task_claims")
+}
+
+model UserCardBack {
+  userId     String    @map("user_id") @db.VarChar(32)
+  cardBackId String    @map("card_back_id") @db.VarChar(64)
+  source     String    @db.VarChar(32)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  user       User      @relation(fields: [userId], references: [id])
+
+  @@id([userId, cardBackId])
+  @@index([cardBackId], map: "idx_user_card_backs_card_back_id")
+  @@map("user_card_backs")
 }
 
 model Room {

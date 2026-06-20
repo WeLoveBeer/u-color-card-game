@@ -150,6 +150,7 @@ export class GameCommandService {
       if (result.ok) {
         await this.states.save(roomId, result.state);
         await this.records.appendAction({
+          gameId: result.state.gameId,
           roomId,
           playerId,
           actionType,

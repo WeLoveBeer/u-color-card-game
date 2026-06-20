@@ -7,10 +7,10 @@ export class AuthController {
   constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Post('wechat-login')
-  wechatLogin(@Body() body: WechatLoginRequest): ApiResponse<WechatLoginResponse> {
+  async wechatLogin(@Body() body: WechatLoginRequest): Promise<ApiResponse<WechatLoginResponse>> {
     if (!body.code) {
       return { success: false, error: { code: 'INVALID_PARAMS', message: '缺少微信登录 code' } };
     }
-    return { success: true, data: this.auth.loginWithWechatCode(body.code) };
+    return { success: true, data: await this.auth.loginWithWechatCode(body.code) };
   }
 }
