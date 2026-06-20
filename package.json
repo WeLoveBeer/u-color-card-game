@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:api": "vitest run server/src/modules",
     "test:domain": "vitest run server/src/game/domain",
     "test:simulate": "vitest run server/src/game/domain/simulate"
   },

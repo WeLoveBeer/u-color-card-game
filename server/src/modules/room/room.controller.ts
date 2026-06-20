@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Inject, Param, Post } from '@nestjs/common';
 import type { ApiResponse, CreateRoomRequest, CreateRoomResponse } from '@shared/protocol/http.js';
 import { AuthService } from '../auth/auth.service.js';
 import { RoomService } from './room.service.js';
@@ -7,8 +7,8 @@ import type { RoomRuntimeState } from './room.types.js';
 @Controller('rooms')
 export class RoomController {
   constructor(
-    private readonly auth: AuthService,
-    private readonly rooms: RoomService
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(RoomService) private readonly rooms: RoomService
   ) {}
 
   @Post()

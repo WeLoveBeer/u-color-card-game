@@ -1,10 +1,10 @@
-import { Controller, Get, Headers } from '@nestjs/common';
+import { Controller, Get, Headers, Inject } from '@nestjs/common';
 import type { ApiResponse, UserProfileDto } from '@shared/protocol/http.js';
 import { AuthService } from '../auth/auth.service.js';
 
 @Controller('users')
 export class UserController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Get('me')
   me(@Headers('authorization') authorization?: string): ApiResponse<UserProfileDto> {

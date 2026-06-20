@@ -1,10 +1,10 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Inject, Post } from '@nestjs/common';
 import type { ApiResponse, WechatLoginRequest, WechatLoginResponse } from '@shared/protocol/http.js';
 import { AuthService } from './auth.service.js';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
   @Post('wechat-login')
   wechatLogin(@Body() body: WechatLoginRequest): ApiResponse<WechatLoginResponse> {

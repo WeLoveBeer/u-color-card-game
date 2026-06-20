@@ -1,3 +1,4 @@
+import { Inject } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -18,10 +19,10 @@ export class GameGateway {
   private server!: Server;
 
   constructor(
-    private readonly auth: AuthService,
-    private readonly rooms: RoomService,
-    private readonly commands: GameCommandService,
-    private readonly mapper: GameEventMapper
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(RoomService) private readonly rooms: RoomService,
+    @Inject(GameCommandService) private readonly commands: GameCommandService,
+    @Inject(GameEventMapper) private readonly mapper: GameEventMapper
   ) {}
 
   async handleConnection(socket: Socket): Promise<void> {
