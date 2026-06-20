@@ -1,5 +1,13 @@
 import { WechatCanvasRenderDriver } from './WechatCanvasRenderDriver.js';
 import { LocalDemoGame } from './LocalDemoGame.js';
+import {
+  DEFAULT_RULE_CONFIG,
+  renderCreateRoom,
+  renderJoinRoom,
+  renderRoom,
+  renderServerGame,
+  viewport
+} from './WechatRoomViews.js';
 
 const COLORS = {
   navy: '#061b36',
@@ -47,16 +55,40 @@ export class WechatCanvasRuntime {
     this.dropZone = null;
     this.handRects = [];
     this.game = null;
+    this.gameMode = 'local';
+    this.room = null;
+    this.serverGameState = null;
+    this.roomConfig = { ...DEFAULT_RULE_CONFIG };
+    this.joinRoomInput = '';
+    this.recentRooms = [];
+    this.selectedServerCardId = null;
+    this.pendingColorCardId = null;
+    this.socket = null;
+    this.socketConnected = false;
+    this.socketSeq = 1;
+    this.lastServerSeq = 0;
     this.aiTimer = null;
     this.localDemo = new LocalDemoGame();
+    this.loginPromise = null;
+    this.lastLoginError = '';
   }
 
   async start() {
     this.resize();
+    this.applyLaunchOptions();
     await this.loadAssets();
     this.bindTouch();
     this.login();
     this.loop();
+  }
+
+  applyLaunchOptions() {
+    const options = wx.getLaunchOptionsSync ? wx.getLaunchOptionsSync() : null;
+    const roomId = options?.query?.roomId;
+    if (roomId) {
+      this.joinRoomInput = String(roomId).trim().toUpperCase();
+      this.scene = 'join_room';
+    }
   }
 
   resize() {
@@ -107,18 +139,32 @@ export class WechatCanvasRuntime {
   }
 
   login() {
-    wx.login({
-      success: async ({ code }) => {
-        try {
-          const response = await this.request('/auth/wechat-login', { code });
-          if (response.success) {
-            this.user = response.data.user;
+    this.loginPromise = new Promise((resolve) => {
+      wx.login({
+        success: async ({ code }) => {
+          try {
+            const response = await this.request('/auth/wechat-login', { code });
+            if (response.success) {
+              this.user = response.data.user;
+              this.lastLoginError = '';
+              resolve(true);
+              return;
+            }
+            this.lastLoginError = response.error?.message || '服务器拒绝登录';
+          } catch (error) {
+            this.lastLoginError = this.errorMessage(error);
+            this.toast(`离线模式：${this.lastLoginError}`);
           }
-        } catch {
-          this.toast('离线模式：本地人机可玩');
+          resolve(false);
+        },
+        fail: (error) => {
+          this.lastLoginError = this.errorMessage(error);
+          this.toast(`离线模式：${this.lastLoginError}`);
+          resolve(false);
         }
-      }
+      });
     });
+    return this.loginPromise;
   }
 
   request(path, body) {
@@ -127,16 +173,35 @@ export class WechatCanvasRuntime {
         url: `${this.options.apiBase}${path}`,
         method: 'POST',
         data: body,
-        header: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+        header: {
+          'Content-Type': 'application/json',
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
+        },
         success: (response) => {
+          if (response.statusCode && response.statusCode >= 400) {
+            reject(new Error(`HTTP ${response.statusCode}`));
+            return;
+          }
           if (response.data?.data?.token) {
             this.token = response.data.data.token;
           }
           resolve(response.data);
         },
-        fail: reject
+        fail: (error) => {
+          reject(new Error(this.errorMessage(error)));
+        }
       });
     });
+  }
+
+  errorMessage(error) {
+    if (!error) {
+      return '未知错误';
+    }
+    if (typeof error === 'string') {
+      return error;
+    }
+    return error.errMsg || error.message || '网络请求失败';
   }
 
   bindTouch() {
@@ -155,7 +220,7 @@ export class WechatCanvasRuntime {
   }
 
   onPointerDown(x, y) {
-    if (this.scene === 'game') {
+    if (this.scene === 'game' && this.gameMode === 'local') {
       const cardHit = [...this.handRects].reverse().find((rect) => this.contains(rect, x, y));
       if (cardHit) {
         this.drag = {
@@ -172,7 +237,7 @@ export class WechatCanvasRuntime {
     const hit = [...this.hitAreas].reverse().find((area) => this.contains(area, x, y));
     if (hit) {
       hit.onTap();
-    } else if (this.scene === 'game') {
+    } else if (this.scene === 'game' && this.gameMode === 'local') {
       this.selectedCardId = null;
     }
   }
@@ -216,8 +281,18 @@ export class WechatCanvasRuntime {
     this.hitAreas = [];
     this.handRects = [];
     this.dropZone = null;
-    if (this.scene === 'game') {
+    if (this.scene === 'game' && this.gameMode === 'local') {
       this.drawGame();
+    } else if (this.scene === 'game' && this.gameMode === 'server') {
+      this.drawServerGame();
+    } else if (this.scene === 'create_room') {
+      this.drawCreateRoom();
+    } else if (this.scene === 'join_room') {
+      this.drawJoinRoom();
+    } else if (this.scene === 'room') {
+      this.drawRoom();
+    } else if (this.scene === 'result') {
+      this.drawServerGame();
     } else if (this.scene === 'tasks') {
       this.drawTasks();
     } else if (this.scene === 'cardBacks') {
@@ -239,10 +314,45 @@ export class WechatCanvasRuntime {
 
   startLocalGame() {
     this.game = this.localDemo.create();
+    this.gameMode = 'local';
+    this.serverGameState = null;
     this.selectedCardId = null;
     this.clearAiTimer();
     this.scene = 'game';
     this.scheduleAiTurn();
+  }
+
+  drawCreateRoom() {
+    const tree = renderCreateRoom(this.roomConfig, viewport(this));
+    this.renderDriver.draw(tree);
+    this.hitAreas.push(...tree.hitAreas.map((area) => this.toWechatHitArea(area)));
+  }
+
+  drawJoinRoom() {
+    const tree = renderJoinRoom(this.joinRoomInput, this.recentRooms, viewport(this));
+    this.renderDriver.draw(tree);
+    this.hitAreas.push(...tree.hitAreas.map((area) => this.toWechatHitArea(area)));
+  }
+
+  drawRoom() {
+    if (!this.room) {
+      this.scene = 'lobby';
+      this.toast('房间状态为空');
+      return;
+    }
+    const tree = renderRoom(this.room, this.user?.id, viewport(this));
+    this.renderDriver.draw(tree);
+    this.hitAreas.push(...tree.hitAreas.map((area) => this.toWechatHitArea(area)));
+  }
+
+  drawServerGame() {
+    if (!this.serverGameState) {
+      this.scene = this.room ? 'room' : 'lobby';
+      return;
+    }
+    const tree = renderServerGame(this.serverGameState, this.user?.id, this.selectedServerCardId, this.pendingColorCardId, viewport(this));
+    this.renderDriver.draw(tree);
+    this.hitAreas.push(...tree.hitAreas.map((area) => this.toWechatHitArea(area)));
   }
 
   createDeck() {
@@ -535,14 +645,59 @@ export class WechatCanvasRuntime {
       this.startLocalGame();
     } else if (action === 'draw_card') {
       this.drawCard();
+    } else if (action === 'server_draw_card') {
+      this.sendWs({ type: 'draw_card', data: { roomId: this.serverGameState?.roomId } });
+    } else if (action === 'server_select_card') {
+      this.selectServerCard(payload.cardId);
+    } else if (action === 'server_choose_color') {
+      this.playServerCard(payload.cardId, payload.color);
+    } else if (action === 'server_call_u') {
+      this.sendWs({ type: 'call_u', data: { roomId: this.serverGameState?.roomId } });
     } else if (action === 'select_card') {
       this.tapCard(payload.cardId);
     } else if (action === 'call_u') {
       this.callU();
     } else if (action === 'restart_local_game') {
       this.startLocalGame();
-    } else if (action === 'create_room' || action === 'join_room') {
-      this.toast('好友房需连接服务端');
+    } else if (action === 'create_room') {
+      this.roomConfig = { ...DEFAULT_RULE_CONFIG };
+      this.scene = 'create_room';
+    } else if (action === 'join_room') {
+      this.scene = 'join_room';
+    } else if (action === 'set_room_config') {
+      this.roomConfig = { ...this.roomConfig, [payload.key]: payload.value };
+    } else if (action === 'toggle_room_config') {
+      this.roomConfig = { ...this.roomConfig, [payload.key]: !this.roomConfig[payload.key] };
+    } else if (action === 'create_room_submit') {
+      this.createFriendRoom();
+    } else if (action === 'edit_room_id') {
+      this.promptRoomId();
+    } else if (action === 'join_room_submit') {
+      if (!payload.disabled) {
+        this.joinFriendRoom(this.joinRoomInput);
+      }
+    } else if (action === 'rejoin_room') {
+      this.joinFriendRoom(payload.roomId);
+    } else if (action === 'copy_room_id') {
+      this.copyRoomId();
+    } else if (action === 'share_room') {
+      this.shareRoom();
+    } else if (action === 'leave_room') {
+      this.leaveRoom();
+    } else if (action === 'ready') {
+      this.sendWs({ type: 'ready', data: { roomId: this.room?.roomId, ready: true } });
+    } else if (action === 'cancel_ready') {
+      this.sendWs({ type: 'ready', data: { roomId: this.room?.roomId, ready: false } });
+    } else if (action === 'start_game') {
+      if (!payload.disabled) {
+        this.sendWs({ type: 'start_game', data: { roomId: this.room?.roomId } });
+      }
+    } else if (action === 'invite_to_seat') {
+      this.shareRoom();
+    } else if (action === 'send_quick_message') {
+      this.toast(payload.message || '已发送');
+    } else if (action === 'room') {
+      this.scene = this.room ? 'room' : 'lobby';
     } else if (action === 'leaderboard') {
       this.scene = 'leaderboard';
     } else if (action === 'daily_reward') {
@@ -551,6 +706,268 @@ export class WechatCanvasRuntime {
     } else if (action === 'rules' || action === 'settings' || action === 'tasks' || action === 'cardBacks' || action === 'profile' || action === 'lobby') {
       this.scene = action;
     }
+  }
+
+  async createFriendRoom() {
+    try {
+      this.toast('正在创建房间...');
+      if (!this.token) {
+        await this.login();
+      }
+      if (!this.token) {
+        this.toast(`登录失败：${this.lastLoginError || '请检查服务器连接'}`);
+        return;
+      }
+      const response = await this.request('/rooms', this.roomConfig);
+      if (!response.success) {
+        this.toast(response.error?.message || '创建房间失败');
+        return;
+      }
+      this.addRecentRoom(response.data.roomId, this.roomConfig);
+      await this.joinFriendRoom(response.data.roomId);
+    } catch (error) {
+      this.toast(`创建房间失败：${this.errorMessage(error)}`);
+    }
+  }
+
+  defaultRoomConfig() {
+    return { ...DEFAULT_RULE_CONFIG };
+  }
+
+  async promptRoomId() {
+    if (!wx.showModal) {
+      this.toast('当前环境不支持输入');
+      return;
+    }
+    wx.showModal({
+      title: '输入房号',
+      editable: true,
+      placeholderText: '例如 123456',
+      content: this.joinRoomInput,
+      success: (result) => {
+        if (result.confirm) {
+          this.joinRoomInput = String(result.content || '').trim().toUpperCase();
+        }
+      }
+    });
+  }
+
+  async joinFriendRoom(roomId) {
+    const normalized = String(roomId || '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{4,12}$/.test(normalized)) {
+      this.toast('房号格式不正确');
+      return;
+    }
+    try {
+      this.toast('正在进入房间...');
+      await this.ensureLoggedIn();
+      await this.ensureSocket();
+      this.joinRoomInput = normalized;
+      this.sendWs({ type: 'join_room', data: { roomId: normalized } });
+    } catch (error) {
+      this.toast(`进入房间失败：${this.errorMessage(error)}`);
+    }
+  }
+
+  async ensureLoggedIn() {
+    if (this.token) {
+      return true;
+    }
+    await this.login();
+    if (!this.token) {
+      throw new Error(this.lastLoginError || '登录失败');
+    }
+    return true;
+  }
+
+  ensureSocket() {
+    if (this.socket && this.socketConnected) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const url = this.socketUrl();
+      const task = wx.connectSocket({ url });
+      this.socket = task;
+      this.socketConnected = false;
+      let settled = false;
+      const fail = (error) => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(this.errorMessage(error)));
+        }
+      };
+      task.onOpen(() => {
+        this.socketConnected = true;
+      });
+      task.onMessage((event) => {
+        this.handleSocketFrame(String(event.data || ''));
+        if (!settled && this.socketConnected) {
+          settled = true;
+          resolve();
+        }
+      });
+      task.onClose(() => {
+        this.socketConnected = false;
+      });
+      task.onError(fail);
+      setTimeout(() => fail(new Error('连接超时')), 8000);
+    });
+  }
+
+  socketUrl() {
+    let base = this.options.wsBase || this.options.apiBase.replace(/^http/, 'ws').replace(/\/api$/, '/ws');
+    if (!base.includes('?') && !base.endsWith('/')) {
+      base += '/';
+    }
+    const separator = base.includes('?') ? '&' : '?';
+    return `${base}${separator}EIO=4&transport=websocket&token=${encodeURIComponent(this.token || '')}`;
+  }
+
+  handleSocketFrame(frame) {
+    if (frame.startsWith('0')) {
+      this.socket?.send({ data: '40' });
+      return;
+    }
+    if (frame === '2') {
+      this.socket?.send({ data: '3' });
+      return;
+    }
+    if (frame.startsWith('40')) {
+      this.socketConnected = true;
+      return;
+    }
+    if (!frame.startsWith('42')) {
+      return;
+    }
+    try {
+      const [eventName, payload] = JSON.parse(frame.slice(2));
+      if (eventName === 'message') {
+        this.handleServerMessage(payload);
+      }
+    } catch (error) {
+      this.toast(`消息解析失败：${this.errorMessage(error)}`);
+    }
+  }
+
+  sendWs(message) {
+    if (!message?.data?.roomId) {
+      this.toast('房间状态未就绪');
+      return null;
+    }
+    if (!this.socket || !this.socketConnected) {
+      this.toast('连接未就绪');
+      return null;
+    }
+    const seq = this.socketSeq++;
+    this.socket.send({ data: `42${JSON.stringify(['message', { ...message, seq }])}` });
+    return seq;
+  }
+
+  handleServerMessage(message) {
+    if (!message) {
+      return;
+    }
+    if (message.seq) {
+      this.lastServerSeq = Math.max(this.lastServerSeq, message.seq);
+    }
+    if (message.type === 'error') {
+      this.toast(message.error?.message || '操作失败');
+      return;
+    }
+    if (message.type === 'room_state') {
+      this.room = message.data;
+      this.addRecentRoom(message.data.roomId, message.data.config, message.data.status);
+      if (!this.serverGameState || message.data.status !== 'playing') {
+        this.scene = 'room';
+      }
+      return;
+    }
+    if (message.type === 'game_start') {
+      this.serverGameState = message.data.state;
+      this.gameMode = 'server';
+      this.selectedServerCardId = null;
+      this.pendingColorCardId = null;
+      this.scene = 'game';
+      return;
+    }
+    if (message.type === 'game_state') {
+      this.serverGameState = message.data;
+      this.gameMode = 'server';
+      this.scene = 'game';
+      return;
+    }
+    if (message.data?.state) {
+      this.serverGameState = message.data.state;
+      this.gameMode = 'server';
+      this.scene = message.data.state.status === 'finished' ? 'result' : 'game';
+    }
+    if (message.type === 'game_over') {
+      this.scene = 'result';
+    }
+  }
+
+  selectServerCard(cardId) {
+    const card = this.serverGameState?.myHand?.find((item) => item.id === cardId);
+    if (!card) {
+      return;
+    }
+    if (this.selectedServerCardId !== cardId) {
+      this.selectedServerCardId = cardId;
+      this.toast('再次点击确认出牌');
+      return;
+    }
+    if (card.type === 'wild_color' || card.type === 'wild_plus_four') {
+      this.pendingColorCardId = cardId;
+      return;
+    }
+    this.playServerCard(cardId);
+  }
+
+  playServerCard(cardId, chooseColor) {
+    this.sendWs({ type: 'play_card', data: { roomId: this.serverGameState?.roomId, cardIds: [cardId], ...(chooseColor ? { chooseColor } : {}) } });
+    this.selectedServerCardId = null;
+    this.pendingColorCardId = null;
+  }
+
+  addRecentRoom(roomId, config = this.roomConfig, status = 'waiting') {
+    const item = {
+      roomId,
+      playerCount: config.playerCount,
+      maxPlayers: config.playerCount,
+      status,
+      statusText: status === 'playing' ? '对局中' : status === 'finished' ? '已结束' : '等待中',
+      lastJoinedAt: new Date().toISOString()
+    };
+    this.recentRooms = [item, ...this.recentRooms.filter((room) => room.roomId !== roomId)].slice(0, 5);
+  }
+
+  copyRoomId() {
+    const roomId = this.room?.roomId;
+    if (!roomId) {
+      return;
+    }
+    if (wx.setClipboardData) {
+      wx.setClipboardData({ data: roomId });
+    }
+    this.toast(`房号 ${roomId} 已复制`);
+  }
+
+  shareRoom() {
+    const roomId = this.room?.roomId;
+    if (wx.shareAppMessage && roomId) {
+      wx.shareAppMessage({ title: `加入 U彩牌房间 ${roomId}`, query: `roomId=${roomId}` });
+    }
+    this.toast(roomId ? `分享房间 ${roomId}` : '暂无房间可分享');
+  }
+
+  leaveRoom() {
+    if (this.room?.roomId) {
+      this.sendWs({ type: 'leave_room', data: { roomId: this.room.roomId } });
+    }
+    this.room = null;
+    this.serverGameState = null;
+    this.gameMode = 'local';
+    this.scene = 'lobby';
   }
 
   drawTasks() {
