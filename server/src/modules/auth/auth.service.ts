@@ -32,6 +32,20 @@ export class AuthService {
     return this.users.get(userId) ?? null;
   }
 
+  listUsers(): UserProfileDto[] {
+    return [...this.users.values()];
+  }
+
+  addCoin(userId: string, coinDelta: number): UserProfileDto | null {
+    const user = this.users.get(userId);
+    if (!user) {
+      return null;
+    }
+    const next = { ...user, coin: Math.max(0, user.coin + coinDelta) };
+    this.users.set(userId, next);
+    return next;
+  }
+
   private hash(input: string): string {
     let value = 0;
     for (const char of input) {
