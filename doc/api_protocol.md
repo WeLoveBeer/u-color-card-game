@@ -404,6 +404,12 @@ wss://game.example.com/ws?token=<token>
 }
 ```
 
+说明：
+
+- 房主发送 `start_game` 后，如果房间未坐满且开启 AI 补位，服务端自动补满空位并开始。
+- 如果房间未坐满且未开启 AI 补位，服务端返回人数不足错误。
+- 如果有真人玩家未准备，服务端返回未准备错误。
+
 ### 7.5 出牌
 
 ```json
@@ -421,7 +427,7 @@ wss://game.example.com/ws?token=<token>
 说明：
 
 - 标准规则下 `cardIds` 只有 1 张。
-- 开启同色全出时，`cardIds` 可以包含多张。
+- 同色全出由独立功能牌触发，客户端只提交同色全出牌的 `cardId`，服务端自动带出同色牌。
 - 变色牌和强制摸四牌必须传 `chooseColor`。
 
 ### 7.6 摸牌
@@ -442,7 +448,8 @@ wss://game.example.com/ws?token=<token>
 - 如果摸到可出的牌，客户端展示“打出这张 / 留在手里”选择。
 - “打出这张”只能打刚摸到的那张牌，不能改打手里原本已有的其他牌。
 - 如果刚摸到的是变色牌或强制摸四牌，也允许立即打出，但必须选择颜色。
-- 选择“留在手里”后，客户端发送 `pass_turn` 或由服务端按摸牌响应直接结束回合。
+- 选择“留在手里”后，客户端发送 `pass_turn`。
+- 如果玩家超时没有选择，服务端默认按“留在手里”处理并结束回合。
 - 如果存在 +2 / +4 等待摸牌惩罚，`draw_card` 按惩罚规则结算，不按普通主动摸牌处理。
 
 ### 7.7 结束回合
@@ -459,7 +466,7 @@ wss://game.example.com/ws?token=<token>
 
 ### 7.8 强制摸四响应
 
-当玩家被强制摸四影响且房间开启质疑时，客户端发送该消息。
+当玩家被强制摸四影响且房间开启质疑或强制摸四叠加时，客户端发送该消息。
 
 选择摸牌：
 
@@ -486,6 +493,27 @@ wss://game.example.com/ws?token=<token>
   }
 }
 ```
+
+选择打出强制摸四继续叠加：
+
+```json
+{
+  "seq": 10,
+  "type": "respond_plus_four",
+  "data": {
+    "roomId": "839201",
+    "action": "stack_plus_four",
+    "cardId": "c_102",
+    "chooseColor": "green"
+  }
+}
+```
+
+说明：
+
+- `stack_plus_four` 只能在房间开启强制摸四叠加，且响应玩家手里有强制摸四时使用。
+- 上家打出强制摸四时，即使响应玩家手里有加二，也不能用加二响应强制摸四。
+- 同时开启强制摸四叠加和强制摸四质疑时，如果响应玩家手里有强制摸四，服务端只下发 `stack_plus_four`、`challenge` 两种选项；没有强制摸四时才下发 `challenge`、`draw`。
 
 ### 7.9 喊 U
 
@@ -676,7 +704,7 @@ wss://game.example.com/ws?token=<token>
     "targetPlayerId": "u_2",
     "challengedPlayerId": "u_1",
     "chooseColor": "blue",
-    "options": ["draw", "challenge"],
+    "options": ["stack_plus_four", "challenge"],
     "turnDeadline": 1781870030000
   }
 }
@@ -743,6 +771,12 @@ wss://game.example.com/ws?token=<token>
         "rank": 1,
         "remainCardCount": 0,
         "score": 0
+      },
+      {
+        "playerId": "u_2",
+        "rank": 2,
+        "remainCardCount": 4,
+        "score": 37
       }
     ],
     "seedHash": "sha256_seed_hash",
@@ -750,8 +784,13 @@ wss://game.example.com/ws?token=<token>
     "coinDeltas": [
       {
         "playerId": "u_1",
-        "coinDelta": 50,
-        "coinAfter": 1250
+        "coinDelta": 37,
+        "coinAfter": 1237
+      },
+      {
+        "playerId": "u_2",
+        "coinDelta": -37,
+        "coinAfter": 963
       }
     ]
   }

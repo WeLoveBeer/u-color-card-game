@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220" role="img" aria-label="avatar burst effect">
+  <path d="M110 16l18 54 56-24-24 56 54 18-54 18 24 56-56-24-18 54-18-54-56 24 24-56-54-18 54-18-24-56 56 24z" fill="#FF6B2E"/>
+  <path d="M110 48l13 41 42-16-17 41 40 14-41 13 17 42-41-17-13 41-13-41-42 17 17-42-41-13 40-14-17-41 42 16z" fill="#FFE45E"/>
+  <circle cx="110" cy="120" r="34" fill="#FFFFFF" opacity=".55"/>
+</svg>

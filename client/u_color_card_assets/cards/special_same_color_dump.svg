@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="224" viewBox="0 0 160 224" role="img" aria-label="same color dump card">
+  <rect x="4" y="4" width="152" height="216" rx="18" fill="#FFFFFF" stroke="#D9DEE8" stroke-width="4"/>
+  <rect x="14" y="14" width="132" height="196" rx="14" fill="#15233F"/>
+  <path d="M80 38l52 74-52 74-52-74z" fill="#2F7BEA"/>
+  <path d="M80 56l38 56-38 56-38-56z" fill="#44B96A"/>
+  <path d="M80 75l24 37-24 37-24-37z" fill="#F5C744"/>
+  <text x="80" y="116" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="28" font-weight="900" fill="#15233F">同色</text>
+  <text x="26" y="46" font-family="Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">全</text>
+  <text x="134" y="194" text-anchor="end" font-family="Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">出</text>
+</svg>

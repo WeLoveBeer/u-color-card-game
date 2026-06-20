@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="224" viewBox="0 0 160 224" role="img" aria-label="swap hand special card">
+  <rect x="4" y="4" width="152" height="216" rx="18" fill="#FFFFFF" stroke="#D9DEE8" stroke-width="4"/>
+  <rect x="14" y="14" width="132" height="196" rx="14" fill="#172541"/>
+  <rect x="40" y="56" width="44" height="70" rx="7" fill="#2F7BEA" stroke="#FFFFFF" stroke-width="5" transform="rotate(-10 62 91)"/>
+  <rect x="76" y="98" width="44" height="70" rx="7" fill="#F5C744" stroke="#FFFFFF" stroke-width="5" transform="rotate(10 98 133)"/>
+  <path d="M104 62h20v20M124 62L94 92" fill="none" stroke="#77F5FF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M56 162H36v-20M36 162l30-30" fill="none" stroke="#77F5FF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="24" y="46" font-family="Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">换</text>
+  <text x="136" y="194" text-anchor="end" font-family="Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">牌</text>
+</svg>

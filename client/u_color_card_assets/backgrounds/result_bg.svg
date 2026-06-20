@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920" role="img" aria-label="result background">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1080" y2="1920" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#112B5C"/>
+      <stop offset=".55" stop-color="#0C5A8D"/>
+      <stop offset="1" stop-color="#063447"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="540" cy="560" r="560" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E8FBFF" stop-opacity=".55"/>
+      <stop offset=".45" stop-color="#42D8FF" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#42D8FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1080" height="1920" fill="url(#sky)"/>
+  <rect width="1080" height="1920" fill="url(#glow)"/>
+  <path d="M0 1340c160-80 314-95 462-45 205 69 411 47 618-67v692H0z" fill="#071F3C" opacity=".32"/>
+  <path d="M112 320h856M82 1514h916" stroke="#9BEAFF" stroke-width="3" opacity=".22"/>
+  <g opacity=".2" fill="none" stroke="#FFFFFF" stroke-width="4">
+    <path d="M143 507h190v266H143z"/>
+    <path d="M747 438h190v266H747z"/>
+    <path d="M454 1215h190v266H454z"/>
+  </g>
+  <g fill="#FFFFFF" opacity=".3">
+    <circle cx="180" cy="210" r="5"/>
+    <circle cx="904" cy="246" r="4"/>
+    <circle cx="840" cy="1110" r="6"/>
+    <circle cx="224" cy="1206" r="4"/>
+    <circle cx="532" cy="176" r="5"/>
+  </g>
+</svg>

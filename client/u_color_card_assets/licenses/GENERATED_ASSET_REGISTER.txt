@@ -1,0 +1,50 @@
+U彩牌本地生成素材登记
+
+生成日期：2026-06-20
+用途：原型开发、内部测试、后续美术与音频精修基准
+
+本批次未下载第三方素材。
+
+视觉素材：
+
+- avatars/player_default.svg
+- avatars/ai_spark.svg
+- avatars/ai_leaf.svg
+- avatars/ai_wave.svg
+- backgrounds/result_bg.svg
+- cards/special_same_color_dump.svg
+- cards/special_balloon.svg
+- cards/special_swap_hand.svg
+- cards/special_color_lock.svg
+- icons/rules.svg
+- icons/back.svg
+- icons/ad.svg
+- effects/effect_skip_mark.svg
+- effects/effect_call_u_bubble.svg
+- effects/effect_coin_burst.svg
+- effects/effect_reverse_arrow.svg
+- effects/effect_plus_two_burst.svg
+- effects/effect_color_wheel.svg
+- effects/effect_avatar_burst.svg
+
+说明：
+
+- 以上 SVG 为本项目原创占位素材。
+- 设计上避开 UNO 官方标志、牌面和受保护视觉元素。
+- 可用于开发联调；正式上线前建议由美术统一精修并重新登记。
+
+人声音效：
+
+- audio/voice_plus_two.wav：Microsoft SAPI 本机语音合成，文本为 "plus two"。
+- audio/voice_skip.wav：Microsoft SAPI 本机语音合成，文本为 "skip"。
+- audio/voice_reverse.wav：Microsoft SAPI 本机语音合成，文本为 "reverse"。
+- audio/voice_color_red.wav：Microsoft SAPI 本机语音合成，文本为 "red"。
+- audio/voice_color_yellow.wav：Microsoft SAPI 本机语音合成，文本为 "yellow"。
+- audio/voice_color_blue.wav：Microsoft SAPI 本机语音合成，文本为 "blue"。
+- audio/voice_color_green.wav：Microsoft SAPI 本机语音合成，文本为 "green"。
+
+说明：
+
+- 当前机器没有可用中文 SAPI 语音包，因此先生成英文人声原型。
+- 正式中文版本建议录制真人中文短句：加二、跳过、反转、红色、黄色、蓝色、绿色。
+- 若使用外部配音或下载音效，必须补充 source_url、author、license、commercial_ok 和 credit_text。

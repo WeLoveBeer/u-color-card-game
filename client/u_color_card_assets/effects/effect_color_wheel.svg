@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220" role="img" aria-label="color wheel effect">
+  <path d="M110 110L110 18A92 92 0 0 1 202 110z" fill="#E84B4B"/>
+  <path d="M110 110H202A92 92 0 0 1 110 202z" fill="#44B96A"/>
+  <path d="M110 110V202A92 92 0 0 1 18 110z" fill="#2F7BEA"/>
+  <path d="M110 110H18A92 92 0 0 1 110 18z" fill="#F5C744"/>
+  <circle cx="110" cy="110" r="42" fill="#10233F" stroke="#FFFFFF" stroke-width="8"/>
+</svg>

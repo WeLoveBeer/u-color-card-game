@@ -291,13 +291,15 @@ RewardService：
 
 金币结算默认值：
 
-- 2 人局：第 1 名 +50 金币，第 2 名 -50 金币。
-- 3 人局：第 1 名 +60 金币，第 2 名 +10 金币，第 3 名 -70 金币。
-- 4 人局：第 1 名 +80 金币，第 2 名 +20 金币，第 3 名 -30 金币，第 4 名 -70 金币。
-- 人机局中 AI 不拥有金币，玩家输赢由系统发放或扣除。
-- 金币不足时最低扣到 0。
-- 广告翻倍只翻倍正向金币奖励，不放大失败扣除。
+- 对局金币不再使用固定名次表，统一按本局结束时失败者的剩余手牌分结算。
+- 单张牌金币分：数字牌按牌面数字计分；Skip、Reverse、+2 为 20 分；Wild、Wild +4 为 50 分。
+- 2 人局：失败者按自己的剩余手牌分扣金币，胜者获得失败者实际扣除的金币。
+- 3/4 人局：每个失败者分别按自己的剩余手牌分扣金币，胜者获得所有失败者实际扣除金币的总和。
+- 人机局中 AI 不拥有金币，AI 应得或应扣的部分由系统发放或扣除。
+- 金币不足时最低扣到 0；赢家只获得失败者实际扣掉的金币，不由系统补差，严格保持玩家之间真实零和。
+- 广告翻倍只翻倍正向金币奖励，不放大失败扣除，翻倍得到的额外金币计入每日对局正向金币上限。
 - 排行榜按用户当前金币余额排名。
+- 任务奖励进入金币余额并参与排行榜排名。
 - 首版建议每日对局正向金币获取上限为 1000 金币，防止刷榜。
 
 ConfigService：
@@ -309,462 +311,42 @@ ConfigService：
 - 特殊牌配置。
 - 房间默认规则配置。
 
-### 3.4 API 设计
+### 3.4 API 与 WebSocket
 
-微信登录：
+接口字段、消息格式、错误码、重连消息和强制摸四/喊 U/抓忘喊事件统一维护在 `doc/api_protocol.md`。
 
-```text
-POST /api/auth/wechat-login
-```
+技术 Plan 只约束落地顺序：
 
-请求：
+- HTTP API 先完成登录、配置、创建房间、查询房间、广告奖励。
+- WebSocket 先完成加入房间、准备、开始、出牌、摸牌、回合切换、结算。
+- 断线重连、托管、强制摸四响应、喊 U 和抓忘喊跟随 M3 好友房一起接入。
+- 客户端协议类型从 `api_protocol.md` 生成或手动同步到 `client/assets/scripts/net/Protocol.ts`，不要在业务脚本里散写字符串。
 
-```json
-{
-  "code": "wx_login_code"
-}
-```
+## 4. 规则引擎落地
 
-返回：
+规则数据类型、`RuleConfig`、`GameState`、模块接口、扩展规则和测试用例统一维护在 `doc/rule_engine_design.md`。技术 Plan 不再复制字段定义。
 
-```json
-{
-  "token": "jwt_or_session_token",
-  "user": {
-    "id": "u_10001",
-    "nickname": "玩家",
-    "avatar": "",
-    "coin": 0
-  }
-}
-```
+落地要求：
 
-创建房间：
-
-```text
-POST /api/rooms
-```
-
-请求：
-
-```json
-{
-  "playerCount": 4,
-  "initialCards": 7,
-  "turnSeconds": 30,
-  "ruleSet": "standard",
-  "plusTwoStack": false,
-  "plusFourEnabled": true,
-  "aiFill": true,
-  "rounds": 1
-}
-```
-
-返回：
-
-```json
-{
-  "roomId": "839201",
-  "wsUrl": "wss://game.example.com/ws"
-}
-```
-
-领取广告奖励：
-
-```text
-POST /api/rewards/ad
-```
-
-请求：
-
-```json
-{
-  "rewardType": "daily_coin"
-}
-```
-
-返回：
-
-```json
-{
-  "success": true,
-  "coin": 100,
-  "todayClaimed": 1
-}
-```
-
-## 4. WebSocket 协议
-
-客户端发送：
-
-```text
-join_room
-leave_room
-ready
-start_game
-play_card
-draw_card
-choose_color
-pass_turn
-reconnect
-```
-
-服务端下发：
-
-```text
-room_state
-game_start
-turn_changed
-card_played
-card_drawn
-color_changed
-player_skipped
-direction_changed
-player_offline
-player_auto_play_started
-player_reconnected
-game_over
-error
-```
-
-出牌消息：
-
-```json
-{
-  "type": "play_card",
-  "roomId": "839201",
-  "cardId": "c_123",
-  "chooseColor": "blue"
-}
-```
-
-状态下发：
-
-```json
-{
-  "type": "card_played",
-  "state": {
-    "roomId": "839201",
-    "currentPlayerId": "u_2",
-    "currentColor": "blue",
-    "discardTop": {
-      "id": "c_123",
-      "color": "wild",
-      "value": "change_color"
-    },
-    "players": [
-      { "id": "u_1", "handCount": 3 },
-      { "id": "u_2", "handCount": 6 }
-    ],
-    "deckCount": 42
-  }
-}
-```
-
-## 5. 游戏规则实现
-
-GameEngine 接口：
-
-```ts
-class GameEngine {
-  createGame(roomConfig: RoomConfig): GameState {}
-  shuffleDeck(seed: string): Card[] {}
-  dealCards(state: GameState): GameState {}
-  playCard(
-    state: GameState,
-    playerId: string,
-    cardId: string,
-    chooseColor?: CardColor
-  ): GameResult {}
-  drawCard(state: GameState, playerId: string): GameResult {}
-  nextTurn(state: GameState): GameState {}
-  checkGameOver(state: GameState): boolean {}
-}
-```
-
-### 5.1 规则配置模型
-
-规则系统需要支持后续特殊玩法扩展。首版实现标准规则，但数据结构必须预留规则开关和特殊牌包。
-
-```ts
-type RuleConfig = {
-  playerCount: 2 | 3 | 4;
-  initialCards: 5 | 7 | 9;
-  turnSeconds: 15 | 30 | 60;
-  ruleSet: 'standard' | 'party';
-  plusTwoStack: boolean;
-  plusFourStack: boolean;
-  mixedDrawStack: boolean;
-  sameColorDump: boolean;
-  callUPenalty: boolean;
-  plusFourEnabled: boolean;
-  plusFourChallenge: boolean;
-  specialPacks: Array<'balloon' | 'swap_hand' | 'color_lock'>;
-  aiFill: boolean;
-  rounds: 1 | 3 | 5;
-};
-```
-
-首版默认：
-
-```ts
-const DEFAULT_RULE_CONFIG: RuleConfig = {
-  playerCount: 4,
-  initialCards: 7,
-  turnSeconds: 30,
-  ruleSet: 'standard',
-  plusTwoStack: false,
-  plusFourStack: false,
-  mixedDrawStack: false,
-  sameColorDump: false,
-  callUPenalty: true,
-  plusFourEnabled: true,
-  plusFourChallenge: true,
-  specialPacks: [],
-  aiFill: true,
-  rounds: 1
-};
-```
-
-规则包映射：
-
-```ts
-const STANDARD_RULE_CONFIG = {
-  plusTwoStack: false,
-  plusFourStack: false,
-  mixedDrawStack: false,
-  sameColorDump: false,
-  plusFourEnabled: true,
-  plusFourChallenge: true,
-  callUPenalty: true,
-  specialPacks: []
-};
-
-const PARTY_RULE_CONFIG = {
-  plusTwoStack: true,
-  plusFourStack: false,
-  mixedDrawStack: false,
-  sameColorDump: true,
-  plusFourEnabled: true,
-  plusFourChallenge: true,
-  callUPenalty: true,
-  specialPacks: []
-};
-```
-
-说明：
-
-- 首版只保留 `standard` 和 `party`，不提供 `simple`。
-- 标准模式包含强制摸四质疑和忘喊 U 罚牌。
-- 欢乐模式默认打开同色全出和加二叠加。
-- 加四叠加和混合叠加惩罚过强，首版作为高级扩展预留，不随欢乐模式默认开启。
-
-### 5.2 规则引擎拆分
-
-不要把所有出牌逻辑写在一个巨大 `if/else` 中。建议拆成：
-
-```text
-RuleValidator：判断能不能出牌
-EffectResolver：结算功能牌效果
-TurnResolver：计算下一位玩家
-DeckResolver：洗牌、发牌、摸牌
-ScoreResolver：结算排名和分数
-RuleConfigResolver：把房间设置转换为规则配置
-```
-
-特殊牌效果使用处理器注册：
-
-```ts
-type CardEffectHandler = {
-  type: string;
-  canPlay(ctx: RuleContext, card: Card): boolean;
-  resolve(ctx: RuleContext, card: Card): EffectResult;
-};
-```
-
-后续新增气球牌、交换手牌牌、颜色封锁牌时，只新增对应 handler，不改标准牌主流程。
-
-### 5.3 后续规则扩展示例
-
-同色全出：
-
-- 配置项：`sameColorDump`。
-- 允许玩家一次提交多张同色牌。
-- 服务端按提交顺序校验每张牌。
-- 最后一张功能牌才触发主要效果，避免一次打多张功能牌导致结算混乱。
-
-加二 / 加四叠加：
-
-- 配置项：`plusTwoStack`、`plusFourStack`、`mixedDrawStack`。
-- 服务端维护 `pendingDrawCount` 和 `pendingDrawSource`。
-- 玩家如果能继续叠加，则允许出对应加牌。
-- 玩家不能叠加时，必须摸累计张数并跳过回合。
-
-忘喊 U 罚牌：
-
-- 配置项：`callUPenalty`。
-- 首版默认开启，人机模式和好友房默认都开启。
-- 玩家手牌为 2 张时，打出倒数第二张牌前必须先喊 U。
-- 如果未喊 U 就出牌，服务端打开可抓窗口。
-- 其他玩家点击目标头像抓忘喊，成功后目标玩家摸 2 张。
-- 服务端必须校验可抓窗口，客户端只负责播放头像爆炸和罚牌动画。
-
-气球牌：
-
-- 配置项：`specialPacks` 包含 `balloon`。
-- 效果可以是随机改变当前颜色，或让下家下回合先摸 1 张。
-- 随机结果必须由服务端生成并下发。
-
-规则扩展要求：
-
-- 每个新规则都要有服务端单元测试。
-- 每个新特殊牌都要有客户端动画状态。
-- 房间创建时保存完整规则配置，结算记录中保存规则快照。
+- 服务端实现按 `GameEngine`、`RuleValidator`、`EffectResolver`、`TurnResolver`、`DeckResolver`、`ScoreResolver` 拆分。
+- 特殊牌使用 handler 注册，不把所有效果写进一个巨大条件分支。
+- 房间创建时保存完整规则配置，对局记录保存规则快照。
 - AI 决策必须读取当前 `RuleConfig`，不能假设永远是标准规则。
+- 每个新规则和新特殊牌必须补服务端单元测试。
 
-服务端必须校验：
+## 5. 数据与重连落地
 
-- 是否轮到该玩家。
-- 玩家是否拥有该牌。
-- 该牌是否符合当前颜色、数字或功能。
-- 是否需要选择颜色。
-- 是否需要处理 +4 质疑。
-- 摸牌次数是否正确。
-- 功能牌效果是否正确。
-- 玩家是否已出完牌。
-- 超时是否需要托管。
+PostgreSQL 表、Redis Key、TTL、索引和清理策略统一维护在 `doc/data_model.md`，本 Plan 不再复制字段清单。
 
-## 6. Redis 设计
+落地要求：
 
-Redis 用于高频房间和对局状态。
+- Redis 只保存高频、短生命周期状态，房间和对局状态必须设置 TTL。
+- PostgreSQL 保存用户、房间记录、对局结果、操作日志、广告奖励和配置。
+- 对局中断线 15 秒后进入托管，重连后从服务端最新状态恢复，不回滚托管已完成行动。
+- 所有对局操作使用房间锁，避免并发出牌、摸牌和结算覆盖状态。
+- 结算记录保存规则快照和随机种子 hash，便于争议排查。
 
-Key 设计：
-
-```text
-room:{roomId}
-game:{roomId}
-socket:user:{userId}
-room:player:{userId}
-autoplay:room:{roomId}:player:{userId}
-```
-
-`game:{roomId}` 示例：
-
-```json
-{
-  "roomId": "839201",
-  "status": "playing",
-  "players": ["u_1", "u_2", "ai_1", "ai_2"],
-  "deck": ["c_99", "c_12", "c_51"],
-  "discardPile": ["c_5", "c_8"],
-  "hands": {
-    "u_1": ["c_1", "c_2"],
-    "u_2": ["c_3", "c_4"]
-  },
-  "currentPlayerId": "u_1",
-  "currentColor": "red",
-  "direction": 1,
-  "turnDeadline": 1781870000000
-}
-```
-
-Redis 状态需要设置 TTL，避免废弃房间长期占用内存。
-
-### 6.1 断线托管与重连设计
-
-服务端需要明确区分三种状态：
-
-```text
-online：玩家 socket 正常连接
-offline：玩家断线但还未托管
-autoPlaying：玩家断线超过阈值，由 AI 代打
-```
-
-时间策略：
-
-```text
-0 秒：检测到 socket 断开，标记 offline
-0-15 秒：等待客户端自动重连
-15 秒：进入 autoPlaying，服务端广播托管开始
-15 秒以后：轮到该玩家时由托管 AI 行动
-10 分钟：仍保留对局座位，直到本局结束
-```
-
-客户端重连策略：
-
-- WebSocket 断开后立即重连。
-- 1 秒、2 秒、4 秒、8 秒退避，之后每 8 秒重试。
-- 回到前台后立即重连。
-- 重连成功后发送 `reconnect`。
-- 如果客户端不知道房间号，调用服务端通过 `room:player:{userId}` 查找未结束房间。
-
-服务端重连处理：
-
-- 校验 token。
-- 查询玩家是否属于未结束房间。
-- 恢复 socket 映射。
-- 设置 `online = true`。
-- 设置 `isAutoPlaying = false`。
-- 下发完整 `room_state` 和当前玩家视角 `game_state`。
-- 广播 `player_reconnected`。
-
-托管行动策略：
-
-- 托管 AI 使用快速稳定策略。
-- 有合法牌则优先出第一张合法牌。
-- 无合法牌则摸牌。
-- 需要选择颜色时选择自己手牌最多的颜色。
-- 托管行动一旦执行，不因玩家重连而回滚。
-
-## 7. 数据库设计
-
-### 7.1 users
-
-- id
-- openid
-- nickname
-- avatar
-- coin
-- created_at
-- updated_at
-
-### 7.2 rooms
-
-- id
-- owner_id
-- config
-- status
-- created_at
-- ended_at
-
-### 7.3 game_records
-
-- id
-- room_id
-- players
-- winner_id
-- seed_hash
-- started_at
-- ended_at
-
-### 7.4 game_actions
-
-- id
-- game_id
-- player_id
-- action_type
-- action_payload
-- created_at
-
-### 7.5 ad_rewards
-
-- id
-- user_id
-- reward_type
-- amount
-- created_at
-
-## 8. 微信后台配置
+## 6. 微信后台配置
 
 小游戏后台需要配置合法域名。
 
@@ -799,9 +381,9 @@ uploadFile 合法域名：
 - 域名需要备案。
 - 测试环境和正式环境最好分开。
 
-## 9. 部署 Plan
+## 7. 部署 Plan
 
-### 9.1 服务器组件
+### 7.1 服务器组件
 
 ```text
 Nginx
@@ -812,7 +394,7 @@ PostgreSQL
 
 建议用 Docker Compose 管理。
 
-### 9.2 域名规划
+### 7.2 域名规划
 
 ```text
 api.yourdomain.com   -> HTTP API
@@ -820,7 +402,7 @@ game.yourdomain.com  -> WebSocket
 cdn.yourdomain.com   -> 静态资源
 ```
 
-### 9.3 Nginx WebSocket 配置要点
+### 7.3 Nginx WebSocket 配置要点
 
 ```nginx
 location /ws {
@@ -832,7 +414,7 @@ location /ws {
 }
 ```
 
-### 9.4 环境区分
+### 7.4 环境区分
 
 ```text
 dev：本地开发
@@ -859,9 +441,9 @@ const CONFIG = {
 };
 ```
 
-## 10. 开发里程碑
+## 8. 开发里程碑
 
-### 10.1 M1：客户端人机原型
+### 8.1 M1：客户端人机原型
 
 - Cocos 工程初始化。
 - 首页大厅。
@@ -875,7 +457,7 @@ const CONFIG = {
 
 - 不连接服务端也能完整打一局人机。
 
-### 10.2 M2：服务端规则引擎
+### 8.2 M2：服务端规则引擎
 
 - NestJS 项目初始化。
 - PostgreSQL 和 Redis 接入。
@@ -889,7 +471,7 @@ const CONFIG = {
 
 - 通过接口测试可完整跑完一局服务端牌局。
 
-### 10.3 M3：好友房
+### 8.3 M3：好友房
 
 - 创建房间 API。
 - WebSocket 连接。
@@ -897,14 +479,14 @@ const CONFIG = {
 - 准备 / 取消准备。
 - 开始游戏。
 - 对局状态同步。
-- AI 补位。
+- AI 补位：房主点击开始时自动补满空位。
 - 断线重连。
 
 验收：
 
 - 两台手机可通过微信分享进入同一房间并完整结算。
 
-### 10.4 M4：微信能力与广告
+### 8.4 M4：微信能力与广告
 
 - `wx.login` 接入。
 - 微信分享房间。
@@ -917,7 +499,7 @@ const CONFIG = {
 
 - 体验版中可登录、分享、看广告领奖励。
 
-### 10.5 M5：上线前打磨
+### 8.5 M5：上线前打磨
 
 - 包体优化。
 - 分包加载。
@@ -934,7 +516,7 @@ const CONFIG = {
 - 好友房断线可恢复。
 - 广告不影响公平对局。
 
-## 11. 风险与默认决策
+## 9. 风险与默认决策
 
 风险：
 
