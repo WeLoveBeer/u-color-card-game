@@ -7,6 +7,7 @@ import {
   WebSocketServer
 } from '@nestjs/websockets';
 import type { Server, Socket } from 'socket.io';
+import type { CoinDelta, DomainEvent, Ranking } from '@shared/domain/game-state.js';
 import type { WsClientMessage } from '@shared/protocol/ws-client-events.js';
 import type { WsServerMessage } from '@shared/protocol/ws-server-events.js';
 import { GameCommandService, GameEventMapper, toVisibleGameState } from '../../game/application/index.js';
@@ -233,12 +234,13 @@ export class GameGateway {
       socket.emit('message', this.error(seq, result.errorCode ?? 'SERVER_ERROR', '操作失败'));
       return;
     }
+    const settledEvents = this.settleGameOverEvents(events);
     for (const socket of await this.server.in(roomId).fetchSockets()) {
       const socketUserId = socket.data.userId as string | undefined;
       if (!socketUserId) {
         continue;
       }
-      const messages = this.mapper.toMessages(result.state, socketUserId, events) as WsServerMessage[];
+      const messages = this.mapper.toMessages(result.state, socketUserId, settledEvents) as WsServerMessage[];
       for (const item of messages) {
         socket.emit('message', { ...item, seq });
       }
@@ -331,17 +333,58 @@ export class GameGateway {
     if (state?.currentPlayerId === playerId) {
       const { result, events } = await this.commands.runAutoPlay(roomId, playerId);
       if (result.ok) {
+        const settledEvents = this.settleGameOverEvents(events);
         for (const socket of await this.server.in(roomId).fetchSockets()) {
           const socketUserId = socket.data.userId as string | undefined;
           if (!socketUserId) {
             continue;
           }
-          for (const message of this.mapper.toMessages(result.state, socketUserId, events)) {
+          for (const message of this.mapper.toMessages(result.state, socketUserId, settledEvents)) {
             socket.emit('message', message);
           }
         }
       }
     }
+  }
+
+  private settleGameOverEvents(events: DomainEvent[]): DomainEvent[] {
+    return events.map((event) => {
+      if (event.type !== 'game_over') {
+        return event;
+      }
+      return { ...event, coinDeltas: this.settleCoinDeltas(event.winnerId, event.rankings) };
+    });
+  }
+
+  private settleCoinDeltas(winnerId: string, rankings: Ranking[]): CoinDelta[] {
+    const winner = this.auth.getUser(winnerId);
+    let winnerGain = 0;
+    const loserDeltas: CoinDelta[] = [];
+
+    for (const ranking of rankings) {
+      if (ranking.playerId === winnerId) {
+        continue;
+      }
+      const user = this.auth.getUser(ranking.playerId);
+      const loss = Math.min(ranking.score, user?.coin ?? ranking.score);
+      winnerGain += loss;
+      const updated = user ? this.auth.addCoin(ranking.playerId, -loss) : null;
+      loserDeltas.push({
+        playerId: ranking.playerId,
+        coinDelta: -loss,
+        coinAfter: updated?.coin ?? Math.max(0, (user?.coin ?? loss) - loss)
+      });
+    }
+
+    const updatedWinner = winner ? this.auth.addCoin(winnerId, winnerGain) : null;
+    return [
+      {
+        playerId: winnerId,
+        coinDelta: winnerGain,
+        coinAfter: updatedWinner?.coin ?? ((winner?.coin ?? 0) + winnerGain)
+      },
+      ...loserDeltas
+    ];
   }
 
   private error(seq: number | undefined, code: WsServerMessage extends never ? never : string, message: string) {
