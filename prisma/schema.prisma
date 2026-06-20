@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String          @id @db.VarChar(32)
+  openidHash       String          @unique @map("openid_hash") @db.VarChar(128)
+  nickname         String          @default("玩家") @db.VarChar(64)
+  avatar           String          @default("")
+  coin             Int             @default(0)
+  selectedCardBack String          @default("default") @map("selected_card_back") @db.VarChar(64)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  adRewards        AdReward[]
+  dailyStats       UserDailyStat[]
+
+  @@index([coin(sort: Desc), createdAt(sort: Asc)], map: "idx_users_coin_rank")
+  @@map("users")
+}
+
+model Room {
+  id        String    @id @db.VarChar(16)
+  ownerId   String    @map("owner_id") @db.VarChar(32)
+  status    String    @db.VarChar(16)
+  config    Json
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  startedAt DateTime? @map("started_at") @db.Timestamptz
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz
+
+  @@index([ownerId], map: "idx_rooms_owner_id")
+  @@index([status, createdAt], map: "idx_rooms_status_created_at")
+  @@map("rooms")
+}
+
+model GameRecord {
+  id         String   @id @db.VarChar(32)
+  roomId     String   @map("room_id") @db.VarChar(16)
+  ruleConfig Json     @map("rule_config")
+  players    Json
+  rankings   Json
+  winnerId   String?  @map("winner_id") @db.VarChar(32)
+  seedHash   String   @map("seed_hash") @db.VarChar(128)
+  startedAt  DateTime @map("started_at") @db.Timestamptz
+  endedAt    DateTime @map("ended_at") @db.Timestamptz
+
+  @@index([roomId], map: "idx_game_records_room_id")
+  @@index([winnerId], map: "idx_game_records_winner_id")
+  @@index([endedAt], map: "idx_game_records_ended_at")
+  @@map("game_records")
+}
+
+model GameAction {
+  id            BigInt   @id @default(autoincrement())
+  gameId        String   @map("game_id") @db.VarChar(32)
+  playerId      String?  @map("player_id") @db.VarChar(32)
+  actionType    String   @map("action_type") @db.VarChar(32)
+  actionPayload Json     @map("action_payload")
+  stateVersion  Int      @map("state_version")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([gameId], map: "idx_game_actions_game_id")
+  @@index([createdAt], map: "idx_game_actions_created_at")
+  @@map("game_actions")
+}
+
+model AdReward {
+  id          BigInt   @id @default(autoincrement())
+  userId      String   @map("user_id") @db.VarChar(32)
+  rewardType  String   @map("reward_type") @db.VarChar(32)
+  amount      Int
+  adUnitId    String?  @map("ad_unit_id") @db.VarChar(128)
+  claimedDate DateTime @map("claimed_date") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, claimedDate], map: "idx_ad_rewards_user_date")
+  @@index([rewardType, claimedDate], map: "idx_ad_rewards_type_date")
+  @@map("ad_rewards")
+}
+
+model UserDailyStat {
+  userId           String   @map("user_id") @db.VarChar(32)
+  statDate         DateTime @map("stat_date") @db.Date
+  gamesPlayed      Int      @default(0) @map("games_played")
+  gamesWon         Int      @default(0) @map("games_won")
+  adRewardsClaimed Int      @default(0) @map("ad_rewards_claimed")
+  coinEarned       Int      @default(0) @map("coin_earned")
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  user             User     @relation(fields: [userId], references: [id])
+
+  @@id([userId, statDate])
+  @@map("user_daily_stats")
+}
+
+model AppConfig {
+  key       String   @id @db.VarChar(64)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("app_configs")
+}
