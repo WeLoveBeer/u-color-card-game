@@ -30,6 +30,7 @@ export * from './rendering/GameSceneRenderer.js';
 export * from './rendering/LobbyRenderer.js';
 export * from './rendering/RenderCommand.js';
 export * from './rendering/ResponsiveLayout.js';
+export * from './rendering/RoomRenderer.js';
 export * from './room/CreateRoomView.js';
 export * from './room/JoinRoomView.js';
 export * from './room/RoomView.js';
