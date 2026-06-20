@@ -1,3 +1,5 @@
+import { WechatCanvasRenderDriver } from './WechatCanvasRenderDriver.js';
+
 const COLORS = {
   navy: '#061b36',
   navy2: '#0b3767',
@@ -28,6 +30,9 @@ export class WechatCanvasRuntime {
     this.options = options;
     this.canvas = wx.createCanvas();
     this.ctx = this.canvas.getContext('2d');
+    this.renderDriver = new WechatCanvasRenderDriver(this.ctx, {
+      imageResolver: (assetKey) => this.assets.get(assetKey) ?? null
+    });
     this.dpr = wx.getSystemInfoSync().pixelRatio || 1;
     this.hitAreas = [];
     this.scene = 'lobby';
@@ -64,7 +69,10 @@ export class WechatCanvasRuntime {
   async loadAssets() {
     const assets = {
       avatar: `${this.options.assetsBase}/avatars/player_default.svg`,
-      ai: `${this.options.assetsBase}/avatars/ai_wave.svg`
+      ai: `${this.options.assetsBase}/avatars/ai_wave.svg`,
+      'avatar.player.default': `${this.options.assetsBase}/avatars/player_default.svg`,
+      'avatar.ai.wave': `${this.options.assetsBase}/avatars/ai_wave.svg`,
+      'background.lobby': `${this.options.assetsBase}/backgrounds/lobby_bg.svg`
     };
     await Promise.all(
       Object.entries(assets).map(([key, src]) =>
@@ -184,7 +192,9 @@ export class WechatCanvasRuntime {
   }
 
   contains(area, x, y) {
-    return x >= area.x && x <= area.x + area.w && y >= area.y && y <= area.y + area.h;
+    const width = area.w ?? area.width;
+    const height = area.h ?? area.height;
+    return x >= area.x && x <= area.x + width && y >= area.y && y <= area.y + height;
   }
 
   loop() {
@@ -486,24 +496,103 @@ export class WechatCanvasRuntime {
   }
 
   drawLobby() {
-    const w = this.width;
-    const h = this.height;
-    this.drawDeepBackground();
-    this.drawPlayerHeader(18, 18, w - 36, 72);
-    this.drawLogo(w / 2, 154);
-    const top = Math.max(238, h * 0.31);
-    this.actionCard(24, top, w - 48, 88, COLORS.green, COLORS.greenDark, '快速人机', '离线也能练习出牌', 'bot', () => this.startLocalGame());
-    this.actionCard(24, top + 108, w - 48, 82, COLORS.blue, COLORS.blueDark, '创建房间', '邀请好友，欢乐开局', 'house', () => this.toast('好友房需连接服务端'));
-    this.actionCard(24, top + 208, w - 48, 82, COLORS.teal, COLORS.tealDark, '加入房间', '输入房号，加入对局', 'people', () => this.toast('好友房需连接服务端'));
-    const smallY = top + 308;
-    this.smallInfoCard(24, smallY, (w - 58) / 2, 74, '#fff3c9', '#7c4a10', '金币排行榜', '高手云集，等你上榜', 'trophy', () => {
-      this.scene = 'leaderboard';
+    const tree = this.buildLobbyRenderTree();
+    this.renderDriver.draw(tree);
+    this.hitAreas.push(...tree.hitAreas.map((area) => this.toWechatHitArea(area)));
+  }
+
+  buildLobbyRenderTree() {
+    const safeTop = 0;
+    const safeBottom = 0;
+    const margin = Math.max(18, Math.round(this.width * 0.045));
+    const topBar = { x: margin, y: safeTop + 18, width: this.width - margin * 2, height: 78 };
+    const commands = [
+      { type: 'rect', id: 'lobby-bg-color', rect: { x: 0, y: 0, width: this.width, height: this.height }, fill: '#e8fbf4' },
+      { type: 'image', id: 'lobby-bg', assetKey: 'background.lobby', rect: { x: 0, y: 0, width: this.width, height: this.height }, alpha: 0.92 },
+      { type: 'rect', id: 'lobby-top-bar', rect: topBar, fill: 'rgba(255,255,255,0.90)', radius: 16, stroke: '#bae6fd', lineWidth: 1 },
+      { type: 'circle', id: 'lobby-avatar', x: topBar.x + 36, y: topBar.y + topBar.height / 2, radius: 24, fill: '#38bdf8' },
+      { type: 'text', id: 'lobby-nickname', text: this.user?.nickname ?? '小牌手', x: topBar.x + 74, y: topBar.y + 34, fontSize: 22, color: '#0f172a', align: 'left', weight: 'medium', maxWidth: topBar.width - 210 },
+      { type: 'text', id: 'lobby-coin', text: `${this.formatCoin(this.user?.coin ?? 0)} 金币`, x: topBar.x + 74, y: topBar.y + 62, fontSize: 18, color: '#0f766e', align: 'left' },
+      { type: 'text', id: 'lobby-rules', text: '规则', x: topBar.x + topBar.width - 92, y: topBar.y + 48, fontSize: 18, color: '#075985', align: 'center', weight: 'medium' },
+      { type: 'text', id: 'lobby-settings', text: '设置', x: topBar.x + topBar.width - 36, y: topBar.y + 48, fontSize: 18, color: '#075985', align: 'center', weight: 'medium' }
+    ];
+    const hitAreas = [
+      { id: 'hit-rules', action: 'rules', rect: { x: topBar.x + topBar.width - 120, y: topBar.y + 10, width: 54, height: 58 } },
+      { id: 'hit-settings', action: 'settings', rect: { x: topBar.x + topBar.width - 64, y: topBar.y + 10, width: 54, height: 58 } }
+    ];
+
+    const titleY = topBar.y + topBar.height + 70;
+    commands.push(
+      { type: 'text', id: 'lobby-title-u', text: 'U', x: this.width / 2 - 70, y: titleY, fontSize: 70, color: '#facc15', align: 'center', weight: 'bold' },
+      { type: 'text', id: 'lobby-title', text: '彩牌', x: this.width / 2 + 28, y: titleY - 4, fontSize: 50, color: '#0f766e', align: 'center', weight: 'bold' }
+    );
+
+    const primaryTop = Math.max(titleY + 54, this.height * 0.30);
+    const primaryActions = [
+      ['quick_ai', '快速人机', '离线也能练习出牌', '#16a34a'],
+      ['create_room', '创建房间', '邀请好友，欢乐开局', '#2563eb'],
+      ['join_room', '加入房间', '输入房号，加入对局', '#0d9488']
+    ];
+    primaryActions.forEach(([action, title, subtitle, fill], index) => {
+      const rect = { x: margin, y: primaryTop + index * 100, width: this.width - margin * 2, height: 82 };
+      commands.push(
+        { type: 'rect', id: `primary-${action}`, rect, fill, radius: 18 },
+        { type: 'text', id: `primary-${action}-title`, text: title, x: rect.x + 32, y: rect.y + 34, fontSize: 28, color: '#ffffff', align: 'left', weight: 'bold' },
+        { type: 'text', id: `primary-${action}-subtitle`, text: subtitle, x: rect.x + 32, y: rect.y + 63, fontSize: 17, color: 'rgba(255,255,255,0.86)', align: 'left' },
+        { type: 'text', id: `primary-${action}-arrow`, text: '>', x: rect.x + rect.width - 30, y: rect.y + 52, fontSize: 30, color: '#ffffff', align: 'center', weight: 'bold' }
+      );
+      hitAreas.push({ id: `hit-${action}`, action, rect });
     });
-    this.smallInfoCard(34 + (w - 58) / 2, smallY, (w - 58) / 2, 74, '#dceeff', '#153d78', '每日奖励', '登录领取金币', 'coin', () => {
+
+    const secondaryY = primaryTop + 310;
+    const secondaryWidth = (this.width - margin * 2 - 12) / 2;
+    [
+      ['leaderboard', '金币排行榜', '高手云集，等你上榜', '#fff7d6', '#7c4a10'],
+      ['daily_reward', '每日奖励', '登录领取金币', '#dff3ff', '#153d78']
+    ].forEach(([action, title, subtitle, fill, ink], index) => {
+      const rect = { x: margin + index * (secondaryWidth + 12), y: secondaryY, width: secondaryWidth, height: 78 };
+      commands.push(
+        { type: 'rect', id: `secondary-${action}`, rect, fill, radius: 14, stroke: '#ffffff', lineWidth: 2 },
+        { type: 'text', id: `secondary-${action}-title`, text: title, x: rect.x + 16, y: rect.y + 31, fontSize: 18, color: ink, align: 'left', weight: 'bold', maxWidth: rect.width - 28 },
+        { type: 'text', id: `secondary-${action}-subtitle`, text: subtitle, x: rect.x + 16, y: rect.y + 56, fontSize: 13, color: ink, align: 'left', maxWidth: rect.width - 28 }
+      );
+      hitAreas.push({ id: `hit-${action}`, action, rect });
+    });
+
+    const tabTop = this.height - safeBottom - 70;
+    commands.push({ type: 'rect', id: 'bottom-tabs-bg', rect: { x: 0, y: tabTop, width: this.width, height: 70 }, fill: 'rgba(11,34,63,0.92)', radius: 18 });
+    ['首页', '任务', '牌背', '我的'].forEach((label, index) => {
+      const rect = { x: index * this.width / 4, y: tabTop, width: this.width / 4, height: 70 };
+      commands.push({ type: 'text', id: `tab-${index}`, text: label, x: rect.x + rect.width / 2, y: rect.y + 44, fontSize: 15, color: index === 0 ? '#ffffff' : '#b6c2d2', align: 'center', weight: index === 0 ? 'bold' : 'medium' });
+      hitAreas.push({ id: `hit-tab-${index}`, action: ['lobby', 'tasks', 'cardBacks', 'profile'][index], rect });
+    });
+
+    return { width: this.width, height: this.height, commands, hitAreas };
+  }
+
+  toWechatHitArea(area) {
+    return {
+      x: area.rect.x,
+      y: area.rect.y,
+      w: area.rect.width,
+      h: area.rect.height,
+      onTap: () => this.handleRenderAction(area.action, area.payload)
+    };
+  }
+
+  handleRenderAction(action) {
+    if (action === 'quick_ai') {
+      this.startLocalGame();
+    } else if (action === 'create_room' || action === 'join_room') {
+      this.toast('好友房需连接服务端');
+    } else if (action === 'leaderboard') {
+      this.scene = 'leaderboard';
+    } else if (action === 'daily_reward') {
       this.user.coin += 100;
       this.toast('金币 +100');
-    });
-    this.bottomNav('lobby');
+    } else if (action === 'rules' || action === 'settings' || action === 'tasks' || action === 'cardBacks' || action === 'profile' || action === 'lobby') {
+      this.scene = action;
+    }
   }
 
   drawTasks() {
