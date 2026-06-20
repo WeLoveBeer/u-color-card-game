@@ -7,3 +7,8 @@ export * from './effects/effect-resolver.js';
 export * from './rules/rule-validator.js';
 export * from './scoring/score-resolver.js';
 export * from './turn/turn-resolver.js';
+export * from './ai/ai-action.types.js';
+export * from './ai/ai-action-generator.js';
+export * from './ai/ai-player.js';
+export * from './ai/ai-scorer.js';
+export * from './ai/local-game-runner.js';
