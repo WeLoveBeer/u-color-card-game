@@ -11,5 +11,8 @@ export type RoomRuntimeState = {
     seatIndex: number;
     online: boolean;
     isAi: boolean;
+    isAutoPlaying?: boolean;
+    disconnectAt?: number | null;
+    autoPlayAt?: number | null;
   }>;
 };

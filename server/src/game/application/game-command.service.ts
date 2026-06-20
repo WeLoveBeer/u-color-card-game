@@ -78,6 +78,55 @@ export class GameCommandService {
     return this.states.get(roomId);
   }
 
+  async markPlayerOffline(roomId: string, playerId: PlayerId, autoPlayAt: number): Promise<GameState | null> {
+    const state = await this.states.get(roomId);
+    if (!state) {
+      return null;
+    }
+    const next: GameState = {
+      ...state,
+      players: state.players.map((player) =>
+        player.id === playerId
+          ? { ...player, online: false, disconnectAt: Date.now(), autoPlayAt }
+          : player
+      )
+    };
+    await this.states.save(roomId, next);
+    return next;
+  }
+
+  async markPlayerReconnected(roomId: string, playerId: PlayerId): Promise<GameState | null> {
+    const state = await this.states.get(roomId);
+    if (!state) {
+      return null;
+    }
+    const next: GameState = {
+      ...state,
+      players: state.players.map((player) =>
+        player.id === playerId
+          ? { ...player, online: true, isAutoPlaying: false, disconnectAt: null, autoPlayAt: null }
+          : player
+      )
+    };
+    await this.states.save(roomId, next);
+    return next;
+  }
+
+  async markPlayerAutoPlaying(roomId: string, playerId: PlayerId): Promise<GameState | null> {
+    const state = await this.states.get(roomId);
+    if (!state) {
+      return null;
+    }
+    const next: GameState = {
+      ...state,
+      players: state.players.map((player) =>
+        player.id === playerId ? { ...player, isAutoPlaying: true } : player
+      )
+    };
+    await this.states.save(roomId, next);
+    return next;
+  }
+
   private async run(
     roomId: string,
     playerId: PlayerId,
