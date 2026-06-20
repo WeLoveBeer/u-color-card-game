@@ -6,7 +6,9 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 export default defineConfig({
   test: {
     globals: true,
-    environment: 'node'
+    environment: 'node',
+    include: ['server/src/**/*.spec.ts'],
+    exclude: ['dist/**', 'node_modules/**']
   },
   resolve: {
     alias: {

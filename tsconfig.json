@@ -12,6 +12,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "rootDir": ".",
+    "outDir": "dist",
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["shared/src/*"],
@@ -19,5 +20,6 @@
       "@client/*": ["client/src/*"]
     }
   },
-  "include": ["shared/src/**/*.ts", "server/src/**/*.ts", "client/src/**/*.ts"]
+  "include": ["shared/src/**/*.ts", "server/src/**/*.ts", "client/src/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
 }
